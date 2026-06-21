@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **TPS** now measures decode-phase throughput only (from first output token to `message_end`), matching the industry-standard `1/TPOT` metric (IETF `draft-gaikwad-llm-benchmarking-terminology`). Previously the denominator included part of the TTFT wait (from `message_start`), producing a hybrid metric that didn't correspond to any standard definition. Decode TPS is slightly higher than the previous hybrid for most responses.
+
+- **Elapsed** now measures end-to-end request latency (from `before_provider_request` to `message_end`), matching the industry-standard E2E latency definition. Previously it excluded the `before_provider_request → message_start` gap, making the user's initial wait invisible. Elapsed is now slightly higher than before for responses with non-trivial prefill.
+
 ## 0.2.1
 
 ### Fixed

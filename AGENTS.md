@@ -1,18 +1,16 @@
-# AGENTS.md — pi-stats-meter
+# AGENTS.md — pi-pulse
 
-Guidelines for anyone (human or agent) working on the `pi-stats-meter` extension.
+Guidelines for anyone (human or agent) working on the `pi-pulse` extension.
 
 ## Project purpose
 
 A Pi footer/status extension that replaces the stock `"tps"` key with live,
 rolling metrics:
 
-- **TPS** — tokens per second during assistant streaming (text, reasoning, and
-  streamed tool-call deltas). Shown as a colored braille sparkline plus rolling
-  average, all-time mean, and all-time p95.
+- **TPS** — decode-phase throughput: tokens per second from first output token to `message_end` (equivalent to `1/TPOT` as defined by the IETF LLM benchmarking terminology). Shown as a colored braille sparkline plus rolling average, all-time mean, and all-time p95.
 - **TTFT** — time from `before_provider_request` to the first assistant output
   token (`text_delta`, `thinking_delta`, `toolcall_delta`, or `toolcall_start`).
-- **Elapsed** — accumulated wall-clock duration of all completed assistant responses during the session. While streaming, the *rendered* value is the current response duration; while idle, the value is the running total and is persisted across reloads/resumes.
+- **Elapsed** — end-to-end request latency from `before_provider_request` to `message_end`, accumulated across all completed assistant responses. While streaming, the *rendered* value is the current E2E latency; while idle, the value is the running total and is persisted across reloads/resumes.
 
 The source compiles to `dist/` and is loaded by Pi via `package.json#pi.extensions`.
 
@@ -59,6 +57,11 @@ granularity for per-response metrics.
 - TTFT must measure from the most recent `before_provider_request` to the first
   assistant output token. If `before_provider_request` did not fire for a
   message, fall back to `message_start`.
+- TPS must use the decode-phase denominator (first output token to
+  `message_end`), not the full response duration. TTFT captures prefill
+  latency separately.
+- Elapsed must start from `before_provider_request` (with fallback to
+  `message_start`) to capture the full E2E request latency.
 - A non-streamed tool call (`tool_call` update without deltas) still counts as
   the first assistant output for TTFT, even though it contributes no streamed
   tokens to TPS.
@@ -71,10 +74,10 @@ The meter survives Pi reloads and restarts of the same session by saving a
 small snapshot to the session file on `session_shutdown` and restoring it on
 the next `session_start`.
 
-- Persist via `pi.appendEntry("pi-stats-meter/snapshot", meter.serialize())`
+- Persist via `pi.appendEntry("pi-pulse/snapshot", meter.serialize())`
   in the `session_shutdown` handler, guarded by `meter.hasData()`.
 - Restore by scanning `ctx.sessionManager.getBranch()` for the latest
-  `"pi-stats-meter/snapshot"` custom entry and calling `meter.restore()`.
+  `"pi-pulse/snapshot"` custom entry and calling `meter.restore()`.
 - The snapshot stores capped buffers (all-time TPS, all-time TTFT, rolling
   window, sparkline graph) plus `totalElapsedMs`. Timestamps are shifted to the
   current monotonic clock on restore so rolling-window averages remain valid.

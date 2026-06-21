@@ -1,4 +1,4 @@
-# pi-stats-meter
+# pi-pulse
 
 Live footer meter for the [pi coding agent](https://pi.dev) that shows:
 
@@ -23,7 +23,7 @@ TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p95 55 | TTFT μ 0.25s | Elapsed 1
 
    ```json
    {
-     "extensions": ["/path/to/pi-stats-meter/src/extension.ts"]
+     "extensions": ["/path/to/pi-pulse/src/extension.ts"]
    }
    ```
 3. Remove the stock `pi-tps-meter` extension if it is enabled.
@@ -32,14 +32,14 @@ TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p95 55 | TTFT μ 0.25s | Elapsed 1
 ### As a Pi package (once published)
 
 ```bash
-pi install npm:pi-stats-meter
+pi install npm:pi-pulse
 ```
 
 Or add to `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "packages": ["npm:pi-stats-meter"]
+  "packages": ["npm:pi-pulse"]
 }
 ```
 
@@ -67,7 +67,7 @@ Or run the shell runner:
 ## Project layout
 
 ```text
-pi-stats-meter/
+pi-pulse/
 ├── src/
 │   ├── extension.ts   # Pi event wiring
 │   ├── meter.ts       # TPS/TTFT/Elapsed accumulator
@@ -91,7 +91,7 @@ pi-stats-meter/
 
 ## How it measures
 
-Pi streams assistant output through `message_update` events. pi-stats-meter recognizes three *token-like* delta events:
+Pi streams assistant output through `message_update` events. pi-pulse recognizes three *token-like* delta events:
 
 | Event | Counts for TPS | Stops TTFT timer | Notes |
 |-------|----------------|------------------|-------|
@@ -103,14 +103,14 @@ Other events such as `text_start`, `toolcall_start`, `toolcall_end`, and `done` 
 
 **TTFT** is measured from `before_provider_request` to the first assistant output token (`text_delta`, `thinking_delta`, `toolcall_delta`) or non-streamed `toolcall_start` of the same assistant message.
 
-**TPS** is `estimated_tokens / response_elapsed`, where response elapsed runs from `message_start` to `message_end`. This is a user-perceived throughput metric (prefill wait included), which keeps short-prefill operations such as write/edit fast-looking while still penalizing long time-to-first-token. Both the live display and the sample stored on `message_end` are suppressed when the response is shorter than `TPS_MIN_ELAPSED_SEC` (0.3s), so they never disagree.
+**TPS** is `estimated_tokens / decode_elapsed`, where decode elapsed runs from the first assistant output token to `message_end`. This is a decode-phase throughput metric (equivalent to `1 / TPOT` as defined by the IETF LLM benchmarking terminology), measuring how fast the model generates tokens once it starts talking, independent of prefill latency. TTFT separately captures the prefill cost. Both the live display and the sample stored on `message_end` are suppressed when the decode phase is shorter than `TPS_MIN_ELAPSED_SEC` (0.3s), so they never disagree.
 
-**Elapsed** is the total wall-clock time the assistant spent generating responses during the session. Each completed assistant message adds its `message_start → message_end` duration to the running total. While a response is streaming, the live footer shows the *current* response duration; once idle, the footer freezes and displays the accumulated total, which is persisted across reloads/resumes.
+**Elapsed** is the end-to-end (E2E) request latency accumulated across all completed assistant responses. Each response measures from `before_provider_request` to `message_end`, capturing the full user-perceived wait time including request serialization, network latency, and provider prefill. If `before_provider_request` did not fire for a response, the fallback anchor is `message_start`. While a response is streaming, the live footer shows the current E2E latency; once idle, the footer freezes and displays the accumulated total, which is persisted across reloads/resumes.
 
 ## Persistence across reloads
 
 On `session_shutdown` the meter saves a compact snapshot
-(`customType: "pi-stats-meter/snapshot"`) to the current session file.
+(`customType: "pi-pulse/snapshot"`) to the current session file.
 On the next `session_start` (reload, resume, or restart of the same session)
 it restores the all-time TPS/TTFT buffers, rolling-window average, sparkline,
 and the accumulated elapsed time.
