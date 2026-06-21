@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- Harden CI workflows: fix Scorecard action commit SHA, add top-level workflow permissions, resolve npm audit findings via js-yaml override, and add branch/tag protection.
+
 ## 0.3.0
 
 ### Minor Changes
