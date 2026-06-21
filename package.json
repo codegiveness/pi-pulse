@@ -1,0 +1,53 @@
+{
+  "name": "pi-stats-meter",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Live TPS, TTFT, and response-time meter for the pi coding agent.",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "extension",
+    "tps",
+    "ttft",
+    "tokens-per-second",
+    "time-to-first-token",
+    "performance",
+    "footer"
+  ],
+  "main": "./dist/extension.js",
+  "types": "./dist/extension.d.ts",
+  "exports": {
+    ".": {
+      "default": "./dist/extension.js",
+      "types": "./dist/extension.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/extension.js"
+    ]
+  },
+  "scripts": {
+    "build": "./node_modules/typescript/bin/tsc",
+    "typecheck": "./node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "pretest": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.0",
+    "typescript": "^5.7.0"
+  }
+}
