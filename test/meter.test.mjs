@@ -58,14 +58,14 @@ test("single assistant message records TTFT, TPS, elapsed and graph", () => {
 	assert.strictEqual(s.currentTtft, 0.2); // 1200-1000
 	assert.strictEqual(s.tpsSamples, 1);
 	assert.strictEqual(s.graphLen, 1);
-	assert.strictEqual(s.lastElapsedMs, 500); // 1600-1100
-	assert.strictEqual(s.totalElapsedMs, 500);
+	assert.strictEqual(s.lastElapsedMs, 600); // 1600-1000 (E2E from before_provider_request)
+	assert.strictEqual(s.totalElapsedMs, 600);
 
-	// TPS = 5 tokens / 0.5s = 10
+	// TPS = 5 tokens / 0.4s (decode phase from first token at 1200 to end at 1600) = 12.5 → rounded to 13
 	const final = meter.renderFinal(theme);
-	assert.ok(final.includes("[error:10] avg"), `expected colored 10 avg in ${final}`);
+	assert.ok(final.includes("[error:13] avg"), `expected colored 13 avg in ${final}`);
 	assert.ok(final.includes("0.20s"), `expected "0.20s" TTFT in ${final}`);
-	assert.ok(final.includes("Elapsed [dim:0.5s]"), `expected frozen elapsed in ${final}`);
+	assert.ok(final.includes("Elapsed [dim:0.6s]"), `expected frozen elapsed in ${final}`);
 });
 
 test("effective TPS is suppressed during the first 300 ms", () => {
@@ -100,7 +100,7 @@ test("TTFT is not recorded without a first-token event", () => {
 	assert.strictEqual(s.ttftSamples, 0);
 	assert.strictEqual(s.tpsSamples, 0);
 	assert.strictEqual(s.graphLen, 0);
-	assert.strictEqual(s.lastElapsedMs, 10_000);
+	assert.strictEqual(s.lastElapsedMs, 10_100); // E2E from before_provider_request at 1000
 });
 
 test("markFirstToken records TTFT without contributing TPS", () => {
@@ -214,13 +214,13 @@ test("serialize and restore preserves metrics across meters", () => {
 	const before = meter.inspect();
 	assert.strictEqual(before.tpsSamples, 1);
 	assert.strictEqual(before.ttftSamples, 1);
-	assert.strictEqual(before.lastElapsedMs, 1000);
+	assert.strictEqual(before.lastElapsedMs, 1100); // E2E from before_provider_request at 1000
 
 	const snapshot = meter.serialize();
 	assert.strictEqual(snapshot.allTps.values.length, 1);
 	assert.strictEqual(snapshot.allTtft.values.length, 1);
 	assert.strictEqual(snapshot.graph.length, 1);
-	assert.strictEqual(snapshot.lastElapsedMs, 1000);
+	assert.strictEqual(snapshot.lastElapsedMs, 1100);
 
 	// Simulate time passing and a new process/extension instance.
 	clock.advance(5_000);
@@ -230,11 +230,11 @@ test("serialize and restore preserves metrics across meters", () => {
 	const after = meter2.inspect();
 	assert.strictEqual(after.tpsSamples, 1);
 	assert.strictEqual(after.ttftSamples, 1);
-	assert.strictEqual(after.lastElapsedMs, 1000);
-	assert.strictEqual(after.totalElapsedMs, 1000);
+	assert.strictEqual(after.lastElapsedMs, 1100);
+	assert.strictEqual(after.totalElapsedMs, 1100);
 
 	const final = meter2.renderFinal(theme);
-	assert.ok(final.includes("μ 10"), `expected mean TPS after restore: ${final}`);
+	assert.ok(final.includes("μ 13"), `expected mean TPS after restore: ${final}`);
 	assert.ok(final.includes("TTFT"), `expected TTFT after restore: ${final}`);
 	assert.ok(final.includes("Elapsed [dim:1s]"), `expected 1s elapsed after restore: ${final}`);
 });
@@ -268,4 +268,79 @@ test("restore ignores corrupt snapshots without throwing", () => {
 	assert.doesNotThrow(() => meter.restore(null));
 	assert.doesNotThrow(() => meter.restore({ savedAt: "bad" }));
 	assert.strictEqual(meter.inspect().tpsSamples, 0);
+});
+
+test("TPS uses decode-phase denominator (excludes TTFT)", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	meter.markRequestStart();           // T0 = 1000
+	clock.advance(100);                 // network + prefill
+	meter.startAssistantMessage();       // T1 = 1100
+	clock.advance(200);                 // continued prefill until first token
+	meter.addDelta("text_delta", "a".repeat(40)); // T2 = 1300, 10 tokens
+	clock.advance(800);                 // decode phase
+	meter.endAssistantMessage();         // T3 = 2100
+
+	// TPS = 10 tokens / 0.8s decode phase (T2→T3), NOT 10 / 1.0s (T1→T3) or 10 / 1.1s (T0→T3)
+	const s = meter.inspect();
+	assert.strictEqual(s.tpsSamples, 1);
+	assert.strictEqual(s.firstTokenTime, 1300);
+
+	const final = meter.renderFinal(theme);
+	// 10 / 0.8 = 12.5 → rounded to 13
+	assert.ok(final.includes("[error:13] avg"), `expected decode TPS 13 in ${final}`);
+});
+
+test("Elapsed includes before_provider_request gap", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	meter.markRequestStart();           // T0 = 1000
+	clock.advance(100);                 // network + prefill gap
+	meter.startAssistantMessage();       // T1 = 1100
+	clock.advance(100);                 // first token at T2 = 1200
+	meter.addDelta("text_delta", "hi");
+	clock.advance(400);                 // end at T3 = 1600
+	meter.endAssistantMessage();
+
+	// Elapsed = T3 - T0 = 600ms (E2E from before_provider_request), NOT T3 - T1 = 500ms
+	const s = meter.inspect();
+	assert.strictEqual(s.elapsedStart, 1000);
+	assert.strictEqual(s.lastElapsedMs, 600);
+	assert.strictEqual(s.totalElapsedMs, 600);
+});
+
+test("Elapsed fallback when no before_provider_request", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// No markRequestStart() called — elapsed should fall back to message_start.
+	meter.startAssistantMessage();       // streamStart = 1000, elapsedStart fallback = 1000
+	clock.advance(200);
+	meter.addDelta("text_delta", "hi");
+	clock.advance(800);
+	meter.endAssistantMessage();         // T3 = 2000
+
+	const s = meter.inspect();
+	assert.strictEqual(s.elapsedStart, 1000);
+	assert.strictEqual(s.lastElapsedMs, 1000); // 2000 - 1000, same as old behavior
+});
+
+test("tool-only response: elapsed includes full E2E from request start", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	meter.markRequestStart();           // T0 = 1000
+	clock.advance(200);                 // network + prefill
+	meter.startAssistantMessage();       // T1 = 1200
+	clock.advance(100);                 // toolcall_start at T2 = 1300
+	meter.markFirstToken();
+	clock.advance(50);                  // end at T3 = 1350
+	meter.endAssistantMessage();
+
+	const s = meter.inspect();
+	assert.strictEqual(s.ttftSamples, 1);
+	assert.strictEqual(s.tpsSamples, 0);  // no streaming tokens
+	assert.strictEqual(s.lastElapsedMs, 350); // E2E: 1350 - 1000, includes prefill
 });

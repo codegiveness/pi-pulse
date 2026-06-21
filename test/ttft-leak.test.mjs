@@ -23,7 +23,7 @@ test("no phantom TTFT sample when a message produces no assistant tokens", () =>
 	const s = meter.inspect();
 	assert.strictEqual(s.ttftSamples, 0, "must not record TTFT without first token");
 	assert.strictEqual(s.tpsSamples, 0, "must not record TPS without tokens");
-	assert.strictEqual(s.lastElapsedMs, 10_000, "elapsed should still reflect message duration");
+	assert.strictEqual(s.lastElapsedMs, 10_200, "elapsed should reflect E2E from before_provider_request");
 });
 
 test("TTFT sample is recorded exactly once per message", () => {
