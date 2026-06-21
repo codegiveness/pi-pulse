@@ -141,6 +141,7 @@ test("multiple messages accumulate all-time TPS stats", () => {
 
 	const final = meter.renderFinal(theme);
 	assert.ok(final.includes("μ 10"), `expected mean 10 in ${final}`);
+	assert.ok(final.includes("p10 10"), `expected p10 10 in ${final}`);
 	assert.ok(final.includes("p95 10"), `expected p95 10 in ${final}`);
 	assert.ok(final.includes("Elapsed [dim:5s]"), `expected total elapsed 5s in ${final}`);
 });
@@ -252,6 +253,8 @@ test("p95 is computed correctly across many distinct values", () => {
 	const final = meter.renderFinal(theme);
 	// p95 of 1..20 = ceil(20 * 0.95) - 1 = 19th value (1-indexed) = 19 (error color, < TPS_MED=20).
 	assert.ok(final.includes("[error:p95 19]"), `expected p95 19 in ${final}`);
+	// p10 of 1..20 = ceil(20 * 0.10) - 1 = 2nd value (1-indexed) = 2 (error color, < TPS_MED=20).
+	assert.ok(final.includes("[error:p10 2.0]"), `expected p10 2.0 in ${final}`);
 });
 
 test("isMeterSnapshot rejects corrupt snapshots", () => {
@@ -343,4 +346,162 @@ test("tool-only response: elapsed includes full E2E from request start", () => {
 	assert.strictEqual(s.ttftSamples, 1);
 	assert.strictEqual(s.tpsSamples, 0);  // no streaming tokens
 	assert.strictEqual(s.lastElapsedMs, 350); // E2E: 1350 - 1000, includes prefill
+});
+
+test("samples older than 10 minutes are excluded from mean and percentiles", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// Record a TPS=20 sample at T=1000.
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(80)); // 20 tokens
+	clock.advance(1000); // 20 tokens / 1s = 20 tps
+	meter.endAssistantMessage();
+
+	// Record a TTFT=0.5s sample.
+	meter.markRequestStart();
+	clock.advance(500);
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(40)); // 10 tokens
+	clock.advance(1000); // 10 tps
+	meter.endAssistantMessage();
+
+	// At this point, μ should reflect both samples.
+	let final = meter.renderFinal(theme);
+	assert.ok(final.includes("TPS"), `expected TPS section before aging: ${final}`);
+	assert.ok(final.includes("TTFT"), `expected TTFT section before aging: ${final}`);
+
+	// Advance 11 minutes — both samples are now outside the 10-minute window.
+	clock.advance(11 * 60 * 1000);
+
+	// Record a fresh TPS=50 sample at T≈12 min.
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(200)); // 50 tokens
+	clock.advance(1000); // 50 tps
+	meter.endAssistantMessage();
+
+	// Record a fresh TTFT=0.1s sample.
+	meter.markRequestStart();
+	clock.advance(100);
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(40));
+	clock.advance(1000);
+	meter.endAssistantMessage();
+
+	// μ and p95 should now reflect only the fresh samples, not the old ones.
+	// The fresh TPS samples are 50 and 10 → mean = 30, p95 = 50, p10 = 10.
+	final = meter.renderFinal(theme);
+	assert.ok(final.includes("μ 30"), `expected recent μ 30 in ${final}`);
+	assert.ok(final.includes("p95 50"), `expected recent p95 50 in ${final}`);
+	assert.ok(final.includes("0.10s"), `expected recent TTFT 0.10s in ${final}`);
+});
+
+test("count cap protects against unbounded growth even without trim", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// Record 600 samples without advancing time enough to expire them.
+	for (let i = 0; i < 600; i++) {
+		meter.startAssistantMessage();
+		meter.addDelta("text_delta", "a".repeat(40));
+		clock.advance(1000);
+		meter.endAssistantMessage();
+	}
+
+	const s = meter.inspect();
+	assert.ok(s.tpsSamples <= 512, `tps sample count ${s.tpsSamples} exceeds cap`);
+	// All 512 samples are within the window (time barely advanced relative to window).
+	assert.strictEqual(s.tpsSamplesRecent, s.tpsSamples);
+});
+
+test("renderFinal shows only Elapsed when window is empty", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// Record a TPS/TTFT sample and accumulate elapsed.
+	meter.markRequestStart();
+	clock.advance(100);
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(40)); // 10 tokens
+	clock.advance(1000); // 10 tps
+	meter.endAssistantMessage();
+
+	// Confirm TPS + TTFT + Elapsed are all shown.
+	let final = meter.renderFinal(theme);
+	assert.ok(final.includes("TPS"), `expected TPS before aging: ${final}`);
+	assert.ok(final.includes("TTFT"), `expected TTFT before aging: ${final}`);
+	assert.ok(final.includes("Elapsed"), `expected Elapsed before aging: ${final}`);
+
+	// Advance past the 10-minute window so all rate samples expire.
+	clock.advance(11 * 60 * 1000);
+
+	// Only Elapsed should remain.
+	final = meter.renderFinal(theme);
+	assert.ok(!final.includes("TPS"), `expected no TPS after aging: ${final}`);
+	assert.ok(!final.includes("TTFT"), `expected no TTFT after aging: ${final}`);
+	assert.ok(final.includes("Elapsed"), `expected Elapsed after aging: ${final}`);
+});
+
+test("inspect exposes windowed sample counts", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// Record 5 TPS samples at T≈1s each.
+	for (let i = 0; i < 5; i++) {
+		meter.startAssistantMessage();
+		meter.addDelta("text_delta", "a".repeat(40));
+		clock.advance(1000);
+		meter.endAssistantMessage();
+	}
+
+	let s = meter.inspect();
+	assert.strictEqual(s.tpsSamples, 5);
+	assert.strictEqual(s.tpsSamplesRecent, 5);
+
+	// Advance 11 minutes — all 5 samples expire from the window.
+	clock.advance(11 * 60 * 1000);
+
+	// Record 2 more samples.
+	for (let i = 0; i < 2; i++) {
+		meter.startAssistantMessage();
+		meter.addDelta("text_delta", "a".repeat(40));
+		clock.advance(1000);
+		meter.endAssistantMessage();
+	}
+
+	s = meter.inspect();
+	assert.strictEqual(s.tpsSamples, 7); // raw ring buffer has all 7
+	assert.strictEqual(s.tpsSamplesRecent, 2); // only the 2 recent ones
+});
+
+test("restore shifts all buffer timestamps and old samples expire correctly", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	// Record a sample at T=1000.
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "a".repeat(40)); // 10 tokens
+	clock.advance(1000); // 10 tps
+	meter.endAssistantMessage();
+
+	const snapshot = meter.serialize();
+
+	// Simulate 5 minutes passing and a new meter instance.
+	clock.advance(5 * 60 * 1000);
+	const meter2 = createMeter({ now: clock.now });
+	meter2.restore(snapshot);
+
+	// The restored sample is shifted to T=5min (age = 0 min) → still in window.
+	let final = meter2.renderFinal(theme);
+	assert.ok(final.includes("μ 10"), `expected μ 10 after restore: ${final}`);
+
+	// Advance another 11 minutes (total 16 min from original, 11 min since restore).
+	// The sample is now 11 minutes old → outside the 10-minute window.
+	clock.advance(11 * 60 * 1000);
+	final = meter2.renderFinal(theme);
+	assert.ok(!final.includes("TPS"), `expected no TPS after aging past window: ${final}`);
+
+	const s = meter2.inspect();
+	assert.strictEqual(s.tpsSamples, 1); // raw buffer still has the stale sample
+	assert.strictEqual(s.tpsSamplesRecent, 0); // but it's outside the window
 });

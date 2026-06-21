@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a problem with pi-pulse
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected.
+      placeholder: The TPS footer shows 0 when...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands or events that trigger the issue.
+      placeholder: |
+        1. Install pi-pulse
+        2. Send a prompt that produces streamed tool calls
+        3. Observe footer
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: pi-pulse version
+      placeholder: e.g. 0.2.1
+  - type: input
+    id: pi-version
+    attributes:
+      label: Pi version
+      placeholder: e.g. 0.79.9

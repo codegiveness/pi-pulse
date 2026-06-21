@@ -1,11 +1,11 @@
-// Functional integration test for pi-stats-meter.
+// Functional integration test for pi-pulse.
 // Drives the compiled extension handlers through a fake Pi runtime using the
 // real wall-clock timer (the extension factory creates its own meter), with
 // short sleeps so the full suite runs in a few seconds.
 import assert from "node:assert";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import statsMeterExtension from "../dist/extension.js";
+import piPulseExtension from "../dist/extension.js";
 
 // Short tick wait: TICK_MS = 250. One tick needs ~250 ms of real time.
 const TICK = 260;
@@ -39,7 +39,7 @@ function createMockPi({ entries } = {}) {
 		},
 		handlers,
 	};
-	statsMeterExtension(pi);
+	piPulseExtension(pi);
 	return pi;
 }
 
@@ -58,7 +58,7 @@ function matchElapsed(text) {
 	return text?.match(/Elapsed (.+)$/)?.[1];
 }
 
-test("[1] registers every handler pi-stats-meter needs", () => {
+test("[1] registers every handler pi-pulse needs", () => {
 	const pi = createMockPi();
 	for (const e of [
 		"session_start",
@@ -110,7 +110,7 @@ test("[3] single-line format matches spec", async () => {
 	const f = lastStatus(ctx.statuses);
 	assert.ok(/^TPS /.test(f), `TPS first in ${f}`);
 	assert.ok(f.split(" | ").length >= 3, `single-line with separators in ${f}`);
-	assert.ok(/p95 [\d.]+ \| TTFT μ [\d.]+s \| Elapsed/.test(f), `order in ${f}`);
+	assert.ok(/p10 [\d.]+ \| p95 [\d.]+ \| TTFT μ [\d.]+s \| Elapsed/.test(f), `order in ${f}`);
 });
 
 test("[4] thinking_delta counts as first token for TTFT", async () => {
@@ -417,13 +417,13 @@ test("[16] session_shutdown persists snapshot and session_start restores it", as
 	await pi.emit("message_end", ctx1, { message: { role: "assistant" } });
 	await pi.emit("session_shutdown", ctx1, { type: "session_shutdown", reason: "reload" });
 	assert.strictEqual(entries.length, 1);
-	assert.strictEqual(entries[0].type, "pi-stats-meter/snapshot");
+	assert.strictEqual(entries[0].type, "pi-pulse/snapshot");
 	const snapshot = entries[0].data;
 	assert.ok(snapshot);
 
 	const pi2 = createMockPi();
 	const ctx2 = createMockCtx();
-	ctx2.sessionManager.getBranch = () => [{ type: "custom", customType: "pi-stats-meter/snapshot", data: snapshot }];
+	ctx2.sessionManager.getBranch = () => [{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot }];
 	await pi2.emit("session_start", ctx2, { type: "session_start", reason: "reload" });
 	const restored = lastStatus(ctx2.statuses);
 	assert.ok(restored, `expected restored footer, got ${ctx2.statuses}`);

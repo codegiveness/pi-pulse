@@ -1,0 +1,15 @@
+pi-pulse — Attribution Notice
+
+Copyright (c) 2026 codegiveness
+
+This extension and portions of its documentation were originally inspired by
+`pi-tps-meter` (https://github.com/vskrch/pi-tps-meter) by vskrch, which demonstrated
+live TPS and TTFT metering in the Pi CLI.
+
+At the time this project incorporated that inspiration, `pi-tps-meter` did not
+provide a discoverable open-source license file in its repository and did not
+declare a `license` field in `package.json`. If you use, modify, or redistribute
+material derived from `pi-tps-meter`, please verify the upstream license independently
+and ensure you comply with its terms.
+
+This project is itself licensed under the MIT License. See LICENSE for details.

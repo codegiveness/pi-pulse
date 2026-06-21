@@ -5,9 +5,10 @@ Guidelines for anyone (human or agent) working on the `pi-pulse` extension.
 ## Project purpose
 
 A Pi footer/status extension that replaces the stock `"tps"` key with live,
-rolling metrics:
+rolling metrics. The goal is to give comparable, quantitative numbers for
+judging provider and model performance instead of relying on impressions.
 
-- **TPS** — decode-phase throughput: tokens per second from first output token to `message_end` (equivalent to `1/TPOT` as defined by the IETF LLM benchmarking terminology). Shown as a colored braille sparkline plus rolling average, all-time mean, and all-time p95.
+- **TPS** — decode-phase throughput: tokens per second from first output token to `message_end` (equivalent to `1/TPOT` as defined by the IETF LLM benchmarking terminology). Shown as a colored braille sparkline plus 60-second rolling average, 10-minute trailing mean, p10, and p95.
 - **TTFT** — time from `before_provider_request` to the first assistant output
   token (`text_delta`, `thinking_delta`, `toolcall_delta`, or `toolcall_start`).
 - **Elapsed** — end-to-end request latency from `before_provider_request` to `message_end`, accumulated across all completed assistant responses. While streaming, the *rendered* value is the current E2E latency; while idle, the value is the running total and is persisted across reloads/resumes.
@@ -66,7 +67,10 @@ granularity for per-response metrics.
   the first assistant output for TTFT, even though it contributes no streamed
   tokens to TPS.
 - Bound all histories: TPS rolling window, all-time TPS buffer, all-time TTFT
-  buffer, and the graph buffer all have fixed caps.
+  buffer, and the graph buffer all have fixed caps. TPS and TTFT distribution
+  statistics (mean, p10, p95) use a trailing 10-minute window
+  (`ALL_TIME_WINDOW_MS`); older samples are excluded from calculation but
+  retained in the ring buffer up to the count cap.
 
 ## Persistence
 
@@ -79,8 +83,9 @@ the next `session_start`.
 - Restore by scanning `ctx.sessionManager.getBranch()` for the latest
   `"pi-pulse/snapshot"` custom entry and calling `meter.restore()`.
 - The snapshot stores capped buffers (all-time TPS, all-time TTFT, rolling
-  window, sparkline graph) plus `totalElapsedMs`. Timestamps are shifted to the
-  current monotonic clock on restore so rolling-window averages remain valid.
+  window, sparkline graph) plus `totalElapsedMs`. All buffer timestamps are
+  shifted to the current monotonic clock on restore so both the 60-second
+  rolling-window average and the 10-minute trailing window remain valid.
 - Do not persist streaming/per-message state (`streaming`, `streamStart`,
   `firstTokenArrived`, etc.). When a session starts the meter must be idle and
   wait for the next assistant message.
@@ -106,11 +111,11 @@ committing.
 
 | Test file | Covers |
 |-----------|--------|
-| `test/format.test.cjs` | Number/duration formatting and color helpers. |
-| `test/graph.test.cjs` | Braille sparkline rendering, wraparound, and color thresholds. |
-| `test/meter.test.cjs` | Full TPS/TTFT/Elapsed lifecycle, multi-message sequences, clock injection, and buffer caps. |
-| `test/extension.test.cjs` | Pi event wiring, start/stop of the live ticker, status clear on shutdown, and abort cleanup. |
-| `test/ttft-leak.test.cjs` | Tool-only / no-first-token turns must not record phantom TTFT or TPS samples. |
+| `test/format.test.mjs` | Number/duration formatting and color helpers. |
+| `test/graph.test.mjs` | Braille sparkline rendering, wraparound, and color thresholds. |
+| `test/meter.test.mjs` | Full TPS/TTFT/Elapsed lifecycle, multi-message sequences, clock injection, and buffer caps. |
+| `test/extension.test.mjs` | Pi event wiring, start/stop of the live ticker, status clear on shutdown, and abort cleanup. |
+| `test/ttft-leak.test.mjs` | Tool-only / no-first-token turns must not record phantom TTFT or TPS samples. |
 
 Use the fake clock (`createMeter({ now: () => clock }`) to make timing tests
 deterministic. Assert on internal `snapshot()` values and rendered output.

@@ -1,11 +1,16 @@
 /**
- * Configuration constants for pi-stats-meter.
+ * Configuration constants for pi-pulse.
  */
 
 // TPS rolling-window config.
 export const TPS_WIN_SIZE = 64;
 export const TPS_WIN_MS = 60_000;
 export const TPS_ALL_TIME_CAP = 512;
+
+// How far back TPS/TTFT distribution statistics look. Older samples are
+// retained in the ring buffer (up to TPS_ALL_TIME_CAP) but excluded from
+// mean/percentile calculations.
+export const ALL_TIME_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 // Live-render timing.
 export const TICK_MS = 250; // interval while streaming
@@ -28,4 +33,4 @@ export const TTFT_FAST = 0.5;
 export const TTFT_MED = 2.0;
 
 // Session persistence key.
-export const SNAPSHOT_TYPE = "pi-stats-meter/snapshot";
+export const SNAPSHOT_TYPE = "pi-pulse/snapshot";

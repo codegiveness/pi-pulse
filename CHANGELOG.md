@@ -1,12 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- Add p10 TPS percentile to the final footer, displayed before p95. Add a NOTICE file attributing the `pi-tps-meter` inspiration. Update all GitHub Actions and development dependencies to their latest versions.
+
 ## Unreleased
 
-### Changed
+### Added
 
-- **TPS** now measures decode-phase throughput only (from first output token to `message_end`), matching the industry-standard `1/TPOT` metric (IETF `draft-gaikwad-llm-benchmarking-terminology`). Previously the denominator included part of the TTFT wait (from `message_start`), producing a hybrid metric that didn't correspond to any standard definition. Decode TPS is slightly higher than the previous hybrid for most responses.
-
-- **Elapsed** now measures end-to-end request latency (from `before_provider_request` to `message_end`), matching the industry-standard E2E latency definition. Previously it excluded the `before_provider_request → message_start` gap, making the user's initial wait invisible. Elapsed is now slightly higher than before for responses with non-trivial prefill.
+- Added a p10 TPS percentile alongside p95, displayed before p95 in the final footer. The p10 value represents the floor of the TPS distribution across completed responses.
 
 ## 0.2.1
 
@@ -27,6 +31,10 @@
 - `fmtTps` consistency: negative inputs now format as `0.0`, matching the zero branch.
 
 ### Changed
+
+- **TPS** now measures decode-phase throughput only (from first output token to `message_end`), matching the industry-standard `1/TPOT` metric (IETF `draft-gaikwad-llm-benchmarking-terminology`). Previously the denominator included part of the TTFT wait (from `message_start`), producing a hybrid metric that didn't correspond to any standard definition. Decode TPS is slightly higher than the previous hybrid for most responses.
+
+- **Elapsed** now measures end-to-end request latency (from `before_provider_request` to `message_end`), matching the industry-standard E2E latency definition. Previously it excluded the `before_provider_request → message_start` gap, making the user's initial wait invisible. Elapsed is now slightly higher than before for responses with non-trivial prefill.
 
 - Braille sparkline columns are now colored by the average of both contributing samples instead of only the left one.
 

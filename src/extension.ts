@@ -1,9 +1,9 @@
 /**
- * pi-stats-meter — Live TPS, TTFT, and response-time footer for pi.
+ * pi-pulse — Live TPS, TTFT, and response-time footer for pi.
  *
  * Displays a single-line footer under the "tps" status key:
  *
- *   TPS ⣤⣸⠀⠀ 42 avg | μ 38 | p95 55 | TTFT μ 0.25s | Elapsed 15s
+ *   TPS ⣤⣸⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | Elapsed 15s
  *
  * Metrics:
  *   - TPS: tokens per second during assistant text/thinking/tool-call-stream output
@@ -21,7 +21,7 @@ import { createMeter } from "./meter.js";
 import { isMeterSnapshot, type MeterSnapshot } from "./meter.js";
 
 /** Called once per Pi session when this extension is loaded. */
-export default function statsMeterExtension(pi: ExtensionAPI): void {
+export default function piPulseExtension(pi: ExtensionAPI): void {
 	const meter = createMeter();
 
 	let tickTimer: ReturnType<typeof setInterval> | null = null;

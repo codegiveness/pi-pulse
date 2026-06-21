@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 import { setTimeout } from "node:timers/promises";
-import statsMeterExtension from "../dist/extension.js";
+import piPulseExtension from "../dist/extension.js";
 
 function createMockCtx({ signal } = {}) {
 	const statuses = [];
@@ -41,7 +41,7 @@ function createMockPiWithEntries(entries = []) {
 		},
 		handlers,
 	};
-	statsMeterExtension(pi);
+	piPulseExtension(pi);
 	return pi;
 }
 
@@ -59,7 +59,7 @@ function createMockPi() {
 		},
 		handlers,
 	};
-	statsMeterExtension(pi);
+	piPulseExtension(pi);
 	return pi;
 }
 
@@ -161,7 +161,7 @@ test("session_shutdown persists snapshot and session_start restores it", async (
 	await pi.emit("session_shutdown", ctx1, { type: "session_shutdown", reason: "reload" });
 
 	assert.strictEqual(entries.length, 1, "expected snapshot persisted on shutdown");
-	assert.strictEqual(entries[0]?.type, "pi-stats-meter/snapshot");
+	assert.strictEqual(entries[0]?.type, "pi-pulse/snapshot");
 	const snapshot = entries[0]?.data;
 	assert.ok(snapshot, "snapshot data should be present");
 
@@ -169,7 +169,7 @@ test("session_shutdown persists snapshot and session_start restores it", async (
 	const pi2 = createMockPiWithEntries([]);
 	const ctx2 = createMockCtx();
 	ctx2.sessionManager.getBranch = () => [
-		{ type: "custom", customType: "pi-stats-meter/snapshot", data: snapshot },
+		{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot },
 	];
 	await pi2.emit("session_start", ctx2, { type: "session_start", reason: "reload" });
 

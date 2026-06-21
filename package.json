@@ -1,9 +1,21 @@
 {
-  "name": "pi-stats-meter",
-  "version": "0.2.0",
+  "name": "pi-pulse",
+  "version": "0.3.0",
   "type": "module",
-  "description": "Live TPS, TTFT, and response-time meter for the pi coding agent.",
+  "description": "Live TPS, TTFT, and response-time footer for the pi coding agent.",
   "license": "MIT",
+  "author": {
+    "name": "codegiveness",
+    "url": "https://github.com/codegiveness"
+  },
+  "homepage": "https://github.com/codegiveness/pi-pulse#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codegiveness/pi-pulse.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codegiveness/pi-pulse/issues"
+  },
   "keywords": [
     "pi-package",
     "pi-coding-agent",
@@ -19,15 +31,20 @@
   "types": "./dist/extension.d.ts",
   "exports": {
     ".": {
-      "default": "./dist/extension.js",
-      "types": "./dist/extension.d.ts"
+      "types": "./dist/extension.d.ts",
+      "default": "./dist/extension.js"
     }
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "pi": {
     "extensions": [
       "./dist/extension.js"
@@ -38,16 +55,18 @@
     "typecheck": "./node_modules/typescript/bin/tsc --noEmit",
     "test": "node --test test/*.test.mjs",
     "pretest": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm run test"
+    "prepublishOnly": "npm run typecheck && npm run test",
+    "release": "npm publish"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.79.0"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.79.0",
-    "typescript": "^5.7.0"
+    "@changesets/cli": "^2.31.0",
+    "@earendil-works/pi-coding-agent": "^0.79.9",
+    "typescript": "^6.0.3"
   }
 }

@@ -5,7 +5,7 @@
  * multiple extension loads (tests, reloads) never share mutable module state.
  */
 
-import { GRAPH_DOTS, TPS_ALL_TIME_CAP, TPS_MIN_ELAPSED_SEC, TPS_WIN_MS, TPS_WIN_SIZE } from "./constants.js";
+import { ALL_TIME_WINDOW_MS, GRAPH_DOTS, TPS_ALL_TIME_CAP, TPS_MIN_ELAPSED_SEC, TPS_WIN_MS, TPS_WIN_SIZE } from "./constants.js";
 import { fmtElapsed, fmtTps, fmtTtft, tpsColor, ttftColor, type Theme } from "./format.js";
 import { brailleGraph } from "./graph.js";
 
@@ -75,6 +75,19 @@ class RingBuf {
 			out[i] = this.data[(start + i) & this.mask];
 		}
 		return out;
+	}
+
+	/** Yield values whose timestamps fall within `windowMs` of `nowMs`. */
+	*valuesInWindow(nowMs: number, windowMs: number): Generator<number> {
+		if (this.len === 0) return;
+		const cutoff = nowMs - windowMs;
+		const start = this.len <= this.mask ? 0 : this.head;
+		for (let i = 0; i < this.len; i++) {
+			const idx = (start + i) & this.mask;
+			if (this.times[idx] >= cutoff) {
+				yield this.data[idx];
+			}
+		}
 	}
 
 	toTimeArray(): Float64Array {
@@ -199,23 +212,18 @@ export class StatsMeter {
 		const nowMs = this.now();
 		const timeShift = nowMs - data.savedAt;
 
-		// Only the rolling-window buffer uses its timestamps (for the 60s avg).
-		// allTps/allTtft store only values (mean/p95 ignore times), so their
-		// timestamps are restored verbatim — no shift needed and no impact.
+		// All three buffers are shifted so that their timestamps align with
+		// the current monotonic clock. This matters for the 60-second rolling
+		// avg (win) and the 10-minute trailing window (allTps, allTtft).
 		const restoreShifted = (buf: RingBuf, values: number[], times: number[]) => {
 			for (let i = 0; i < values.length; i++) {
 				buf.push(values[i], times[i] + timeShift);
 			}
 		};
-		const restorePlain = (buf: RingBuf, values: number[], times: number[]) => {
-			for (let i = 0; i < values.length; i++) {
-				buf.push(values[i], times[i]);
-			}
-		};
 
 		restoreShifted(this.win, data.win.values, data.win.times);
-		restorePlain(this.allTps, data.allTps.values, data.allTps.times);
-		restorePlain(this.allTtft, data.allTtft.values, data.allTtft.times);
+		restoreShifted(this.allTps, data.allTps.values, data.allTps.times);
+		restoreShifted(this.allTtft, data.allTtft.values, data.allTtft.times);
 
 		for (const v of data.graph) this.pushGraph(v);
 		this.lastElapsedMs = data.lastElapsedMs;
@@ -329,23 +337,35 @@ export class StatsMeter {
 		return out;
 	}
 
-	private calcTpsMean(): number {
-		if (this.allTps.len === 0) return 0;
-		const a = this.allTps.toArray();
-		return a.reduce((s, v) => s + v, 0) / a.length;
+	/** Count of samples in `buf` that fall within the trailing 10-minute window. */
+	private windowedCount(buf: RingBuf, nowMs: number): number {
+		let n = 0;
+		for (const _ of buf.valuesInWindow(nowMs, ALL_TIME_WINDOW_MS)) n++;
+		return n;
 	}
 
-	private calcTpsP95(): number {
-		if (this.allTps.len === 0) return 0;
-		const a = this.allTps.toArray();
+	private calcTpsMean(nowMs: number): number {
+		const a = Array.from(this.allTps.valuesInWindow(nowMs, ALL_TIME_WINDOW_MS));
+		return a.length === 0 ? 0 : a.reduce((s, v) => s + v, 0) / a.length;
+	}
+
+	private calcTpsP95(nowMs: number): number {
+		const a = Array.from(this.allTps.valuesInWindow(nowMs, ALL_TIME_WINDOW_MS));
+		if (a.length === 0) return 0;
 		const sorted = a.slice().sort((x, y) => x - y);
 		return sorted[Math.ceil(a.length * 0.95) - 1] || 0;
 	}
 
-	private calcTtftMean(): number {
-		if (this.allTtft.len === 0) return 0;
-		const a = this.allTtft.toArray();
-		return a.reduce((s, v) => s + v, 0) / a.length;
+	private calcTpsP10(nowMs: number): number {
+		const a = Array.from(this.allTps.valuesInWindow(nowMs, ALL_TIME_WINDOW_MS));
+		if (a.length === 0) return 0;
+		const sorted = a.slice().sort((x, y) => x - y);
+		return sorted[Math.max(0, Math.ceil(a.length * 0.10) - 1)] || 0;
+	}
+
+	private calcTtftMean(nowMs: number): number {
+		const a = Array.from(this.allTtft.valuesInWindow(nowMs, ALL_TIME_WINDOW_MS));
+		return a.length === 0 ? 0 : a.reduce((s, v) => s + v, 0) / a.length;
 	}
 
 	private spin(): string {
@@ -385,21 +405,28 @@ export class StatsMeter {
 	renderFinal(theme: Theme): string {
 		const nowMs = this.now();
 		const avg = this.win.avg(nowMs, TPS_WIN_MS);
-		const mu = this.calcTpsMean();
-		const p95 = this.calcTpsP95();
-		if (avg === 0 && mu === 0 && this.allTtft.len === 0 && this.totalElapsedMs === 0) return "";
+		const mu = this.calcTpsMean(nowMs);
+		const p10 = this.calcTpsP10(nowMs);
+		const p95 = this.calcTpsP95(nowMs);
+		const wTtft = this.windowedCount(this.allTtft, nowMs);
+
+		const hasRateData = avg > 0 || mu > 0 || wTtft > 0;
+		const hasElapsed = this.totalElapsedMs > 0;
+		if (!hasRateData && !hasElapsed) return "";
 
 		const parts: string[] = [];
-		parts.push(`TPS ${brailleGraph(this.graph, this.graphLen, this.graphHead, theme)} ${tpsColor(avg, fmtTps(avg), theme)} avg`);
-		parts.push(`${tpsColor(mu, `μ ${fmtTps(mu)}`, theme)}`);
-		parts.push(`${tpsColor(p95, `p95 ${fmtTps(p95)}`, theme)}`);
 
-		const ttftMu = this.calcTtftMean();
-		parts.push(`TTFT ${ttftColor(ttftMu, `μ ${fmtTtft(ttftMu)}`, theme)}`);
+		if (hasRateData) {
+			parts.push(`TPS ${brailleGraph(this.graph, this.graphLen, this.graphHead, theme)} ${tpsColor(avg, fmtTps(avg), theme)} avg`);
+			parts.push(`${tpsColor(mu, `μ ${fmtTps(mu)}`, theme)}`);
+			parts.push(`${tpsColor(p10, `p10 ${fmtTps(p10)}`, theme)}`);
+			parts.push(`${tpsColor(p95, `p95 ${fmtTps(p95)}`, theme)}`);
 
-		// Total elapsed across all completed assistant responses in this session
-		// (frozen while idle, restored from snapshot on reload/restart).
-		if (this.totalElapsedMs > 0) {
+			const ttftMu = this.calcTtftMean(nowMs);
+			parts.push(`TTFT ${ttftColor(ttftMu, `μ ${fmtTtft(ttftMu)}`, theme)}`);
+		}
+
+		if (hasElapsed) {
 			parts.push(`Elapsed ${theme.fg("dim", fmtElapsed(this.totalElapsedMs))}`);
 		}
 
@@ -411,10 +438,13 @@ export class StatsMeter {
 	 * Useful for tests and commands.
 	 */
 	inspect() {
+		const nowMs = this.now();
 		return {
 			streaming: this.streaming,
 			ttftSamples: this.allTtft.len,
 			tpsSamples: this.allTps.len,
+			tpsSamplesRecent: this.windowedCount(this.allTps, nowMs),
+			ttftSamplesRecent: this.windowedCount(this.allTtft, nowMs),
 			lastElapsedMs: this.lastElapsedMs,
 			totalElapsedMs: this.totalElapsedMs,
 			graphLen: this.graphLen,
