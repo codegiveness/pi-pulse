@@ -64,6 +64,9 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
+  "overrides": {
+    "js-yaml": "^4.1.2"
+  },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
     "@earendil-works/pi-coding-agent": "^0.79.9",

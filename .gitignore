@@ -6,12 +6,14 @@ dist/
 build/
 *.tsbuildinfo
 
-# Runtime
+# Runtime / secrets
 *.log
 .DS_Store
 .env
 .env.*
 !.env.example
+.npmrc
+*.tgz
 
 # Editor
 .vscode/
