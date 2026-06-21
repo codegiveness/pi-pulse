@@ -111,7 +111,7 @@ export class StatsMeter {
 
 	// Streaming state.
 	private streaming = false;
-	private streamStart = 0; // assistant message_start timestamp (response duration + TPS anchor)
+	private streamStart = 0; // assistant message_start timestamp
 	private streamChars = 0;
 	private streamTokens = 0;
 
@@ -119,9 +119,11 @@ export class StatsMeter {
 	private requestStart = 0; // timestamp from last before_provider_request
 	private msgRequestStart = 0; // captured per message at message_start
 	private firstTokenArrived = false;
+	private firstTokenTime = 0; // monotonic timestamp of first output token (decode TPS anchor)
 	private currentTtft = 0;
 
-	// Elapsed state: duration of the current/last response and total across the session.
+	// Elapsed state: E2E request latency from before_provider_request to message_end.
+	private elapsedStart = 0; // before_provider_request timestamp (fallback: message_start)
 	private lastElapsedMs = 0;
 	private totalElapsedMs = 0;
 
@@ -152,7 +154,9 @@ export class StatsMeter {
 		this.requestStart = 0;
 		this.msgRequestStart = 0;
 		this.firstTokenArrived = false;
+		this.firstTokenTime = 0;
 		this.currentTtft = 0;
+		this.elapsedStart = 0;
 		this.lastElapsedMs = 0;
 		this.totalElapsedMs = 0;
 		this.spinIndex = 0;
@@ -227,11 +231,15 @@ export class StatsMeter {
 		this.streamChars = 0;
 		this.streamTokens = 0;
 		this.firstTokenArrived = false;
+		this.firstTokenTime = 0;
 		this.currentTtft = 0;
 		this.streaming = true;
 		this.spinIndex = 0;
 		this.msgRequestStart = this.requestStart;
 		this.requestStart = 0;
+		// E2E latency anchor: use before_provider_request timestamp if available,
+		// otherwise fall back to message_start.
+		this.elapsedStart = this.msgRequestStart > 0 ? this.msgRequestStart : this.streamStart;
 	}
 
 	/**
@@ -241,6 +249,7 @@ export class StatsMeter {
 	private recordFirstToken(nowMs: number): void {
 		if (this.firstTokenArrived) return;
 		this.firstTokenArrived = true;
+		this.firstTokenTime = nowMs;
 
 		const base = this.msgRequestStart > 0 ? this.msgRequestStart : this.streamStart;
 		if (base <= 0) return;
@@ -273,9 +282,10 @@ export class StatsMeter {
 		this.recordFirstToken(this.now());
 	}
 
-	/** Effective TPS since message_start (includes prefill wait). */
+	/** Decode-phase TPS: tokens per second from first output token to now. */
 	private effectiveTps(nowMs: number): number {
-		const elapsed = this.streamStart > 0 ? (nowMs - this.streamStart) / 1000 : 0;
+		if (this.firstTokenTime <= 0) return 0;
+		const elapsed = (nowMs - this.firstTokenTime) / 1000;
 		return elapsed > TPS_MIN_ELAPSED_SEC ? this.streamTokens / elapsed : 0;
 	}
 
@@ -284,17 +294,18 @@ export class StatsMeter {
 		this.msgRequestStart = 0;
 
 		const nowMs = this.now();
-		if (this.streamStart > 0) {
-			this.lastElapsedMs = nowMs - this.streamStart;
+		// E2E request latency: from before_provider_request (or message_start fallback) to message_end.
+		if (this.elapsedStart > 0) {
+			this.lastElapsedMs = nowMs - this.elapsedStart;
 			this.totalElapsedMs += this.lastElapsedMs;
 		}
 
-		// Effective TPS since message_start includes the prefill wait, matching the
-		// user-perceived "how many tokens per second of response time" metric.
+		// Decode-phase TPS: tokens per second from first output token to message_end.
 		// Use the same minimum-elapsed threshold as the live display so a very short
-		// response never shows 0 tps live but records a huge sample on completion.
-		const elapsed = this.streamStart > 0 ? (nowMs - this.streamStart) / 1000 : 0;
-		if (elapsed < TPS_MIN_ELAPSED_SEC || this.streamTokens === 0) return;
+		// decode never shows 0 tps live but records a huge sample on completion.
+		if (this.firstTokenTime <= 0 || this.streamTokens === 0) return;
+		const elapsed = (nowMs - this.firstTokenTime) / 1000;
+		if (elapsed < TPS_MIN_ELAPSED_SEC) return;
 
 		const tps = this.streamTokens / elapsed;
 		this.win.push(tps, nowMs);
@@ -363,9 +374,9 @@ export class StatsMeter {
 			parts.push(`TTFT ${ttftColor(this.currentTtft, fmtTtft(this.currentTtft), theme)}`);
 		}
 
-		// Response elapsed (ticks only while streaming).
-		if (this.streamStart > 0) {
-			parts.push(`Elapsed ${theme.fg("dim", fmtElapsed(nowMs - this.streamStart))}`);
+		// E2E request latency: from before_provider_request (or message_start fallback) to now.
+		if (this.elapsedStart > 0) {
+			parts.push(`Elapsed ${theme.fg("dim", fmtElapsed(nowMs - this.elapsedStart))}`);
 		}
 
 		return parts.join(" | ");
@@ -409,6 +420,8 @@ export class StatsMeter {
 			graphLen: this.graphLen,
 			currentTtft: this.currentTtft,
 			streamTokens: this.streamTokens,
+			firstTokenTime: this.firstTokenTime,
+			elapsedStart: this.elapsedStart,
 		};
 	}
 }
