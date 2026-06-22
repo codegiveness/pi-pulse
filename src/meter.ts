@@ -443,6 +443,10 @@ export class StatsMeter {
 	 * Diagnostic accessor: inspect internal state without breaking encapsulation.
 	 * Useful for tests and commands.
 	 */
+	isStreaming(): boolean {
+		return this.streaming;
+	}
+
 	inspect() {
 		const nowMs = this.now();
 		return {

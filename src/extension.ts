@@ -30,7 +30,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		if (tickTimer) return;
 
 		tickTimer = setInterval(() => {
-			if (!meter.inspect().streaming) return;
+			if (!meter.isStreaming()) return;
 			safeSetStatus(ctx, "tps", meter.renderLive(ctx.ui.theme));
 		}, TICK_MS);
 
