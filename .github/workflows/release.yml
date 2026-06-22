@@ -78,12 +78,14 @@ jobs:
           done
           test -f "${TARBALL}"
           # Keyless signature via Sigstore (OIDC); requires id-token: write.
+          # cosign v2 writes the signature into the .sigstore.json bundle
+          # (the legacy --output-signature flag is deprecated and ignored),
+          # so upload the tarball + bundle.
           cosign sign-blob --yes \
             --bundle "${TARBALL}.sigstore.json" \
-            --output-signature "${TARBALL}.sig" \
             "${TARBALL}"
           gh release upload "v${VER}" \
-            "${TARBALL}" "${TARBALL}.sig" "${TARBALL}.sigstore.json" \
+            "${TARBALL}" "${TARBALL}.sigstore.json" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
