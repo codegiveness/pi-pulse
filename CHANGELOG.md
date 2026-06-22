@@ -12,12 +12,6 @@
 
 - Add p10 TPS percentile to the final footer, displayed before p95. Add a NOTICE file attributing the `pi-tps-meter` inspiration. Update all GitHub Actions and development dependencies to their latest versions.
 
-## Unreleased
-
-### Added
-
-- Added a p10 TPS percentile alongside p95, displayed before p95 in the final footer. The p10 value represents the floor of the TPS distribution across completed responses.
-
 ## 0.2.1
 
 ### Fixed
