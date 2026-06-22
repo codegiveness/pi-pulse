@@ -86,6 +86,26 @@ test("effective TPS is suppressed during the first 300 ms", () => {
 	assert.ok(meter.renderLive(theme).includes("[error:8.6 tps]"), `expected live tps at 350ms: ${meter.renderLive(theme)}`);
 });
 
+test("live TPS and recorded sample agree at the 0.3 s minimum-elapsed boundary", () => {
+	const clock = makeClock(1000);
+	const meter = createMeter({ now: clock.now });
+
+	meter.startAssistantMessage();
+	meter.addDelta("text_delta", "hello world"); // 3 tokens; firstTokenTime = 1000
+
+	// Exactly at the 0.3 s boundary: the live display must show non-zero TPS and
+	// endAssistantMessage must record a sample. The two must never disagree
+	// (regression for the effectiveTps `>` vs endAssistantMessage `<` asymmetry).
+	clock.advance(300); // decode elapsed = 0.300 s
+	const live = meter.renderLive(theme);
+	assert.ok(!live.includes("[error:0.0 tps]"), `expected non-zero live tps at boundary: ${live}`);
+
+	meter.endAssistantMessage();
+	const s = meter.inspect();
+	assert.strictEqual(s.tpsSamples, 1, "expected a TPS sample recorded at the 0.3 s boundary");
+	assert.strictEqual(s.graphLen, 1, "expected a graph sample at the 0.3 s boundary");
+});
+
 test("TTFT is not recorded without a first-token event", () => {
 	const clock = makeClock(1000);
 	const meter = createMeter({ now: clock.now });
@@ -264,12 +284,15 @@ test("isMeterSnapshot rejects corrupt snapshots", () => {
 	assert.strictEqual(isMeterSnapshot({ savedAt: "x" }), false);
 	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: {}, allTtft: {}, win: {}, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
 	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: { values: [1], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: ["x"], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
+	// Mismatched values/times lengths would push NaN timestamps on restore.
+	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: { values: [1, 2], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
 });
 
 test("restore ignores corrupt snapshots without throwing", () => {
 	const meter = createMeter();
 	assert.doesNotThrow(() => meter.restore(null));
 	assert.doesNotThrow(() => meter.restore({ savedAt: "bad" }));
+	assert.doesNotThrow(() => meter.restore({ savedAt: 1, allTps: { values: [1, 2], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }));
 	assert.strictEqual(meter.inspect().tpsSamples, 0);
 });
 

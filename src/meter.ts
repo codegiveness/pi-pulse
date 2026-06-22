@@ -103,22 +103,26 @@ class RingBuf {
 	}
 }
 
+/** Whether `v` is a non-null object (narrows to `Record<string, unknown>`). */
+function isRecord(v: unknown): v is Record<string, unknown> {
+	return typeof v === "object" && v !== null;
+}
+
 /** Type guard for a persisted `MeterSnapshot` loaded from a session file. */
 export function isMeterSnapshot(data: unknown): data is MeterSnapshot {
-	if (!data || typeof data !== "object") return false;
-	const d = data as Record<string, unknown>;
-	if (typeof d.savedAt !== "number") return false;
+	if (!isRecord(data)) return false;
+	if (typeof data.savedAt !== "number") return false;
 	for (const key of ["allTps", "allTtft", "win"] as const) {
-		const b = d[key];
-		if (!b || typeof b !== "object") return false;
-		const o = b as Record<string, unknown>;
-		if (!Array.isArray(o.values) || !Array.isArray(o.times)) return false;
-		if (!o.values.every((v) => typeof v === "number")) return false;
-		if (!o.times.every((v) => typeof v === "number")) return false;
+		const b = data[key];
+		if (!isRecord(b)) return false;
+		if (!Array.isArray(b.values) || !Array.isArray(b.times)) return false;
+		if (b.values.length !== b.times.length) return false;
+		if (!b.values.every((v) => typeof v === "number")) return false;
+		if (!b.times.every((v) => typeof v === "number")) return false;
 	}
-	if (!Array.isArray(d.graph) || !d.graph.every((v) => typeof v === "number")) return false;
-	if (typeof d.lastElapsedMs !== "number") return false;
-	if (typeof d.totalElapsedMs !== "number") return false;
+	if (!Array.isArray(data.graph) || !data.graph.every((v) => typeof v === "number")) return false;
+	if (typeof data.lastElapsedMs !== "number") return false;
+	if (typeof data.totalElapsedMs !== "number") return false;
 	return true;
 }
 
@@ -298,7 +302,7 @@ export class StatsMeter {
 	private effectiveTps(nowMs: number): number {
 		if (this.firstTokenTime <= 0) return 0;
 		const elapsed = (nowMs - this.firstTokenTime) / 1000;
-		return elapsed > TPS_MIN_ELAPSED_SEC ? this.streamTokens / elapsed : 0;
+		return elapsed >= TPS_MIN_ELAPSED_SEC ? this.streamTokens / elapsed : 0;
 	}
 
 	endAssistantMessage(): void {
