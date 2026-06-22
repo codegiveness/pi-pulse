@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Patch Changes
+
+- d7574d2: Reconcile the copyright holder in `LICENSE` (`pi-stats-meter contributors` → `codegiveness`) so it matches `NOTICE` and `package.json`.
+
 ## 0.3.1
 
 ### Patch Changes
