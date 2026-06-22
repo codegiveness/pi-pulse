@@ -2,6 +2,17 @@ import assert from "node:assert";
 import test from "node:test";
 import { setTimeout } from "node:timers/promises";
 import piPulseExtension from "../dist/extension.js";
+import { createMeter } from "../dist/meter.js";
+
+function makeClock(initial = 0) {
+	let t = initial;
+	return {
+		now: () => t,
+		advance: (ms) => {
+			t += ms;
+		},
+	};
+}
 
 function createMockCtx({ signal } = {}) {
 	const statuses = [];
@@ -45,7 +56,7 @@ function createMockPiWithEntries(entries = []) {
 	return pi;
 }
 
-function createMockPi() {
+function createMockPi({ meter } = {}) {
 	const handlers = {};
 	const pi = {
 		on(event, handler) {
@@ -59,9 +70,23 @@ function createMockPi() {
 		},
 		handlers,
 	};
-	piPulseExtension(pi);
+	piPulseExtension(pi, { meter });
 	return pi;
 }
+
+test("registers every handler pi-pulse needs", () => {
+	const pi = createMockPi();
+	for (const e of [
+		"session_start",
+		"before_provider_request",
+		"message_start",
+		"message_update",
+		"message_end",
+		"session_shutdown",
+	]) {
+		assert.ok(pi.handlers[e]?.length > 0, `expected handler for ${e}`);
+	}
+});
 
 test("session_start resets status", async () => {
 	const ctx = createMockCtx();
@@ -220,4 +245,35 @@ test("session_start restores the latest snapshot from a branch with multiple ent
 	// The stale snapshot has totalElapsedMs: 0 -> renderFinal returns "" -> no status pushed.
 	// A non-empty restored footer therefore proves the LATEST snapshot was picked.
 	assert.ok(restored.text.includes("Elapsed"), `expected Elapsed from latest snapshot: ${restored.text}`);
+});
+
+test("ticker renders deterministic values with an injected fake-clock meter", async () => {
+	const clock = makeClock(0);
+	const meter = createMeter({ now: clock.now });
+	const pi = createMockPi({ meter });
+	const ctx = createMockCtx();
+
+	clock.advance(100);
+	await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
+	clock.advance(200);
+	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+	clock.advance(100);
+	await pi.emit("message_update", ctx, {
+		message: { role: "assistant" },
+		assistantMessageEvent: { type: "text_delta", delta: "hi" },
+	});
+
+	// The meter is driven by the fake clock, but the ticker still uses a real
+	// interval. Wait long enough for one tick, then assert the rendered live
+	// footer matches the fake-clock state (not wall-clock drift).
+	await setTimeout(300);
+
+	const live = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).pop();
+	// Stop the ticker before asserting so a failed assertion does not leave
+	// a dangling interval behind.
+	await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+
+	assert.ok(live, "expected a live status render from the ticker");
+	assert.ok(live.text.includes("0.30s"), `expected TTFT 0.30s in live footer: ${live.text}`);
+	assert.ok(live.text.includes("0.3s"), `expected Elapsed 0.3s in live footer: ${live.text}`);
 });
