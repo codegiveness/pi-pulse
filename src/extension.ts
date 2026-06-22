@@ -17,12 +17,11 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SNAPSHOT_TYPE, TICK_MS } from "./constants.js";
-import { createMeter } from "./meter.js";
-import { isMeterSnapshot, type MeterSnapshot } from "./meter.js";
+import { createMeter, isMeterSnapshot, type MeterSnapshot, type StatsMeter } from "./meter.js";
 
 /** Called once per Pi session when this extension is loaded. */
-export default function piPulseExtension(pi: ExtensionAPI): void {
-	const meter = createMeter();
+export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: StatsMeter }): void {
+	const meter = deps?.meter ?? createMeter();
 
 	let tickTimer: ReturnType<typeof setInterval> | null = null;
 	let abortCleanup: (() => void) | null = null;
