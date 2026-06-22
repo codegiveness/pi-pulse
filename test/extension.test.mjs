@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import test from "node:test";
-import { setTimeout } from "node:timers/promises";
 import piPulseExtension from "../dist/extension.js";
 import { createMeter } from "../dist/meter.js";
+import { withFakeTimers } from "./_fake-timers.mjs";
 
 function makeClock(initial = 0) {
 	let t = initial;
@@ -108,124 +108,134 @@ test("non-assistant messages are ignored", async () => {
 });
 
 test("assistant streaming lifecycle renders live and final status", async () => {
-	const ctx = createMockCtx();
-	const pi = createMockPi();
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
 
-	await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
-	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
 
-	await pi.emit("message_update", ctx, {
-		message: { role: "assistant" },
-		assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		await pi.emit("message_update", ctx, {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		});
+
+		timers.tick(2); // drive the live ticker synchronously
+
+		const liveCount = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
+		assert.ok(liveCount >= 1, `expected at least one live status, got ${liveCount}`);
+
+		const before = ctx.statuses.length;
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+		const afterMessageEnd = ctx.statuses.length;
+		assert.ok(afterMessageEnd > before, "expected final status after message_end");
+
+		// The ticker was stopped on message_end; further ticks are no-ops.
+		timers.tick(2);
+		assert.strictEqual(ctx.statuses.length, afterMessageEnd, "ticker should stop after message_end");
 	});
-
-	await setTimeout(300); // one tick at TICK_MS = 250ms
-
-	const liveCount = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
-	assert.ok(liveCount >= 1, `expected at least one live status, got ${liveCount}`);
-
-	const before = ctx.statuses.length;
-	await pi.emit("message_end", ctx, { message: { role: "assistant" } });
-	const afterMessageEnd = ctx.statuses.length;
-	assert.ok(afterMessageEnd > before, "expected final status after message_end");
-
-	// Wait to ensure the ticker was stopped.
-	await setTimeout(300);
-	const afterWait = ctx.statuses.length;
-	assert.strictEqual(afterWait, afterMessageEnd, "ticker should stop after message_end");
 });
 
 test("session_shutdown stops ticker and clears status", async () => {
-	const ctx = createMockCtx();
-	const pi = createMockPi();
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
 
-	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
-	await setTimeout(300);
-	const liveCount = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
-	assert.ok(liveCount >= 1);
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		timers.tick(2);
+		const liveCount = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
+		assert.ok(liveCount >= 1);
 
-	await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
-	const cleared = ctx.statuses.at(-1);
-	assert.strictEqual(cleared.key, "tps");
-	assert.strictEqual(cleared.text, undefined);
+		await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
+		const cleared = ctx.statuses.at(-1);
+		assert.strictEqual(cleared.key, "tps");
+		assert.strictEqual(cleared.text, undefined);
 
-	const before = ctx.statuses.length;
-	await setTimeout(300);
-	assert.strictEqual(ctx.statuses.length, before, "ticker should stop after session_shutdown");
+		const before = ctx.statuses.length;
+		timers.tick(2);
+		assert.strictEqual(ctx.statuses.length, before, "ticker should stop after session_shutdown");
+	});
 });
 
 test("abort signal stops the live ticker", async () => {
-	const controller = new AbortController();
-	const ctx = createMockCtx({ signal: controller.signal });
-	const pi = createMockPi();
+	await withFakeTimers(async (timers) => {
+		const controller = new AbortController();
+		const ctx = createMockCtx({ signal: controller.signal });
+		const pi = createMockPi();
 
-	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
-	await setTimeout(300);
-	const liveCountBefore = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
-	assert.ok(liveCountBefore >= 1);
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		timers.tick(2);
+		const liveCountBefore = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).length;
+		assert.ok(liveCountBefore >= 1);
 
-	controller.abort();
+		controller.abort();
 
-	const before = ctx.statuses.length;
-	await setTimeout(300);
-	assert.strictEqual(ctx.statuses.length, before, "ticker should stop when signal aborts");
+		const before = ctx.statuses.length;
+		timers.tick(2);
+		assert.strictEqual(ctx.statuses.length, before, "ticker should stop when signal aborts");
+	});
 });
 
 test("session_shutdown persists snapshot and session_start restores it", async () => {
-	const entries = [];
-	const pi = createMockPiWithEntries(entries);
+	await withFakeTimers(async (timers) => {
+		const entries = [];
+		const pi = createMockPiWithEntries(entries);
 
-	const ctx1 = createMockCtx();
-	await pi.emit("before_provider_request", ctx1, { type: "before_provider_request", payload: {} });
-	await pi.emit("message_start", ctx1, { message: { role: "assistant" } });
-	await pi.emit("message_update", ctx1, {
-		message: { role: "assistant" },
-		assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		const ctx1 = createMockCtx();
+		await pi.emit("before_provider_request", ctx1, { type: "before_provider_request", payload: {} });
+		await pi.emit("message_start", ctx1, { message: { role: "assistant" } });
+		await pi.emit("message_update", ctx1, {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		});
+		timers.tick();
+		await pi.emit("message_end", ctx1, { message: { role: "assistant" } });
+		await pi.emit("session_shutdown", ctx1, { type: "session_shutdown", reason: "reload" });
+
+		assert.strictEqual(entries.length, 1, "expected snapshot persisted on shutdown");
+		assert.strictEqual(entries[0]?.type, "pi-pulse/snapshot");
+		const snapshot = entries[0]?.data;
+		assert.ok(snapshot, "snapshot data should be present");
+
+		// Simulate a fresh extension load / reload with the persisted snapshot in the session branch.
+		const pi2 = createMockPiWithEntries([]);
+		const ctx2 = createMockCtx();
+		ctx2.sessionManager.getBranch = () => [
+			{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot },
+		];
+		await pi2.emit("session_start", ctx2, { type: "session_start", reason: "reload" });
+
+		const restored = ctx2.statuses.find((s) => s.key === "tps" && s.text !== undefined);
+		assert.ok(restored, `expected restored footer after session_start, got ${JSON.stringify(ctx2.statuses)}`);
+		assert.ok(restored.text.includes("TTFT"), `expected TTFT in restored footer: ${restored.text}`);
+		assert.ok(restored.text.includes("Elapsed"), `expected Elapsed in restored footer: ${restored.text}`);
 	});
-	await pi.emit("message_end", ctx1, { message: { role: "assistant" } });
-	await pi.emit("session_shutdown", ctx1, { type: "session_shutdown", reason: "reload" });
-
-	assert.strictEqual(entries.length, 1, "expected snapshot persisted on shutdown");
-	assert.strictEqual(entries[0]?.type, "pi-pulse/snapshot");
-	const snapshot = entries[0]?.data;
-	assert.ok(snapshot, "snapshot data should be present");
-
-	// Simulate a fresh extension load / reload with the persisted snapshot in the session branch.
-	const pi2 = createMockPiWithEntries([]);
-	const ctx2 = createMockCtx();
-	ctx2.sessionManager.getBranch = () => [
-		{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot },
-	];
-	await pi2.emit("session_start", ctx2, { type: "session_start", reason: "reload" });
-
-	const restored = ctx2.statuses.find((s) => s.key === "tps" && s.text !== undefined);
-	assert.ok(restored, `expected restored footer after session_start, got ${JSON.stringify(ctx2.statuses)}`);
-	assert.ok(restored.text.includes("TTFT"), `expected TTFT in restored footer: ${restored.text}`);
-	assert.ok(restored.text.includes("Elapsed"), `expected Elapsed in restored footer: ${restored.text}`);
 });
 
 test("no status calls when UI is unavailable", async () => {
-	const ctx = createMockCtx();
-	ctx.hasUI = false;
-	const pi = createMockPi();
-	await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
-	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
-	await setTimeout(300);
-	assert.strictEqual(ctx.statuses.length, 0, "expected no status calls when hasUI is false");
-	// Stop the ticker the message_start handler started (hasUI is false, so
-	// session_shutdown's safeSetStatus is a no-op and does not affect the assertion).
-	await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		ctx.hasUI = false;
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		timers.tick(2);
+		assert.strictEqual(ctx.statuses.length, 0, "expected no status calls when hasUI is false");
+		await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
+	});
 });
 
 test("throwing setStatus does not crash the extension", async () => {
-	const ctx = createMockCtx();
-	ctx.ui.setStatus = () => { throw new Error("boom"); };
-	const pi = createMockPi();
-	await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
-	await assert.doesNotReject(async () => {
-		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
-		await setTimeout(300);
-		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		ctx.ui.setStatus = () => { throw new Error("boom"); };
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+		await assert.doesNotReject(async () => {
+			await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+			timers.tick(2);
+			await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+		});
 	});
 });
 
@@ -248,32 +258,33 @@ test("session_start restores the latest snapshot from a branch with multiple ent
 });
 
 test("ticker renders deterministic values with an injected fake-clock meter", async () => {
-	const clock = makeClock(0);
-	const meter = createMeter({ now: clock.now });
-	const pi = createMockPi({ meter });
-	const ctx = createMockCtx();
+	await withFakeTimers(async (timers) => {
+		const clock = makeClock(0);
+		const meter = createMeter({ now: clock.now });
+		const pi = createMockPi({ meter });
+		const ctx = createMockCtx();
 
-	clock.advance(100);
-	await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
-	clock.advance(200);
-	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
-	clock.advance(100);
-	await pi.emit("message_update", ctx, {
-		message: { role: "assistant" },
-		assistantMessageEvent: { type: "text_delta", delta: "hi" },
+		clock.advance(100);
+		await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
+		clock.advance(200);
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		clock.advance(100);
+		await pi.emit("message_update", ctx, {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hi" },
+		});
+
+		// The meter is driven by the fake clock and the ticker is driven by the
+		// fake timer, so the rendered live footer is fully deterministic.
+		timers.tick();
+
+		const live = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).pop();
+		// Stop the ticker before asserting so a failed assertion does not leave
+		// a dangling interval behind.
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+
+		assert.ok(live, "expected a live status render from the ticker");
+		assert.ok(live.text.includes("0.30s"), `expected TTFT 0.30s in live footer: ${live.text}`);
+		assert.ok(live.text.includes("0.3s"), `expected Elapsed 0.3s in live footer: ${live.text}`);
 	});
-
-	// The meter is driven by the fake clock, but the ticker still uses a real
-	// interval. Wait long enough for one tick, then assert the rendered live
-	// footer matches the fake-clock state (not wall-clock drift).
-	await setTimeout(300);
-
-	const live = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).pop();
-	// Stop the ticker before asserting so a failed assertion does not leave
-	// a dangling interval behind.
-	await pi.emit("message_end", ctx, { message: { role: "assistant" } });
-
-	assert.ok(live, "expected a live status render from the ticker");
-	assert.ok(live.text.includes("0.30s"), `expected TTFT 0.30s in live footer: ${live.text}`);
-	assert.ok(live.text.includes("0.3s"), `expected Elapsed 0.3s in live footer: ${live.text}`);
 });
