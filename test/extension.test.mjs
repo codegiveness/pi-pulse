@@ -178,3 +178,46 @@ test("session_shutdown persists snapshot and session_start restores it", async (
 	assert.ok(restored.text.includes("TTFT"), `expected TTFT in restored footer: ${restored.text}`);
 	assert.ok(restored.text.includes("Elapsed"), `expected Elapsed in restored footer: ${restored.text}`);
 });
+
+test("no status calls when UI is unavailable", async () => {
+	const ctx = createMockCtx();
+	ctx.hasUI = false;
+	const pi = createMockPi();
+	await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+	await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+	await setTimeout(300);
+	assert.strictEqual(ctx.statuses.length, 0, "expected no status calls when hasUI is false");
+	// Stop the ticker the message_start handler started (hasUI is false, so
+	// session_shutdown's safeSetStatus is a no-op and does not affect the assertion).
+	await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
+});
+
+test("throwing setStatus does not crash the extension", async () => {
+	const ctx = createMockCtx();
+	ctx.ui.setStatus = () => { throw new Error("boom"); };
+	const pi = createMockPi();
+	await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+	await assert.doesNotReject(async () => {
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		await setTimeout(300);
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+	});
+});
+
+test("session_start restores the latest snapshot from a branch with multiple entries", async () => {
+	const entries = [
+		{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 0, allTps: { values: [], times: [] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 } },
+		{ type: "custom", customType: "other-plugin/snapshot", data: {} },
+		{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 1000, allTps: { values: [10], times: [1000] }, allTtft: { values: [0.2], times: [1000] }, win: { values: [10], times: [1000] }, graph: [10], lastElapsedMs: 100, totalElapsedMs: 100 } },
+	];
+	const ctx = createMockCtx();
+	ctx.sessionManager.getBranch = () => entries;
+	const pi = createMockPiWithEntries([]);
+	await pi.emit("session_start", ctx, { type: "session_start", reason: "reload" });
+	const restored = ctx.statuses.find((s) => s.key === "tps" && s.text !== undefined);
+	assert.ok(restored, "expected restored footer with latest snapshot");
+	// The latest snapshot has totalElapsedMs: 100 -> "Elapsed" is rendered.
+	// The stale snapshot has totalElapsedMs: 0 -> renderFinal returns "" -> no status pushed.
+	// A non-empty restored footer therefore proves the LATEST snapshot was picked.
+	assert.ok(restored.text.includes("Elapsed"), `expected Elapsed from latest snapshot: ${restored.text}`);
+});
