@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  # Allows manually re-running the release workflow after a workflow fix
+  # (the push trigger below ignores .github/workflows/release.yml changes).
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -37,7 +40,7 @@ jobs:
 
       - name: Create Release Pull Request or Publish
         id: changesets
-        uses: changesets/action@a45c4d594aa4e2e509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@v1.9.0 # tag pin; GitHub Actions failed to resolve the v1.9.0 commit SHA despite API confirmation
         with:
           # `changeset publish` (via `npm run release`) is idempotent: it skips
           # versions already on the registry, so non-version-bump triggers
