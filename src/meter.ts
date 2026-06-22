@@ -61,8 +61,8 @@ class RingBuf {
 		const start = this.len <= this.mask ? 0 : this.head;
 		for (let i = 0; i < this.len; i++) {
 			const idx = (start + i) & this.mask;
-			if (this.times[idx] < cutoff) continue;
-			sum += this.data[idx];
+			if (this.times[idx]! < cutoff) continue;
+			sum += this.data[idx]!;
 			n++;
 		}
 		return n === 0 ? 0 : sum / n;
@@ -72,7 +72,8 @@ class RingBuf {
 		const out = new Float64Array(this.len);
 		const start = this.len <= this.mask ? 0 : this.head;
 		for (let i = 0; i < this.len; i++) {
-			out[i] = this.data[(start + i) & this.mask];
+			// idx is masked to [0, capacity), so the typed-array access is in-bounds.
+		out[i] = this.data[(start + i) & this.mask]!;
 		}
 		return out;
 	}
@@ -84,8 +85,9 @@ class RingBuf {
 		const start = this.len <= this.mask ? 0 : this.head;
 		for (let i = 0; i < this.len; i++) {
 			const idx = (start + i) & this.mask;
-			if (this.times[idx] >= cutoff) {
-				yield this.data[idx];
+			if (this.times[idx]! >= cutoff) {
+				// idx is masked to [0, capacity), so the typed-array access is in-bounds.
+				yield this.data[idx]!;
 			}
 		}
 	}
@@ -94,7 +96,8 @@ class RingBuf {
 		const out = new Float64Array(this.len);
 		const start = this.len <= this.mask ? 0 : this.head;
 		for (let i = 0; i < this.len; i++) {
-			out[i] = this.times[(start + i) & this.mask];
+			// idx is masked to [0, capacity), so the typed-array access is in-bounds.
+		out[i] = this.times[(start + i) & this.mask]!;
 		}
 		return out;
 	}
@@ -217,7 +220,8 @@ export class StatsMeter {
 		// avg (win) and the 10-minute trailing window (allTps, allTtft).
 		const restoreShifted = (buf: RingBuf, values: number[], times: number[]) => {
 			for (let i = 0; i < values.length; i++) {
-				buf.push(values[i], times[i] + timeShift);
+				// i < values.length and i < times.length by the loop bound.
+			buf.push(values[i]!, times[i]! + timeShift);
 			}
 		};
 
@@ -332,7 +336,8 @@ export class StatsMeter {
 		const out = new Float64Array(this.graphLen);
 		const start = this.graphLen === GRAPH_DOTS ? this.graphHead : 0;
 		for (let i = 0; i < this.graphLen; i++) {
-			out[i] = this.graph[(start + i) % GRAPH_DOTS];
+			// `(start + i) % GRAPH_DOTS` is always inside the graph buffer.
+		out[i] = this.graph[(start + i) % GRAPH_DOTS]!;
 		}
 		return out;
 	}
@@ -369,7 +374,8 @@ export class StatsMeter {
 	}
 
 	private spin(): string {
-		const s = SPIN[this.spinIndex];
+		// spinIndex is modulo SPIN.length, so the index is always valid.
+		const s = SPIN[this.spinIndex]!;
 		this.spinIndex = (this.spinIndex + 1) % SPIN.length;
 		return s;
 	}

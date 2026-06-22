@@ -7,7 +7,7 @@ import type { Theme } from "./format.js";
 
 const BRAILLE_OFFSET = 0x2800;
 
-const DOT_BITS: number[][] = [
+const DOT_BITS: [number, number][] = [
 	[0x01, 0x08],
 	[0x02, 0x10],
 	[0x04, 0x20],
@@ -38,7 +38,8 @@ export function brailleGraph(
 	const oldest = len < GRAPH_DOTS ? 0 : head;
 	let localMax = 1;
 	for (let i = 0; i < len; i++) {
-		const v = buf[(oldest + i) % GRAPH_DOTS];
+		// Guaranteed in-bounds by the loop condition and `% GRAPH_DOTS`.
+		const v = buf[(oldest + i) % GRAPH_DOTS]!;
 		if (v > localMax) localMax = v;
 	}
 
@@ -52,21 +53,23 @@ export function brailleGraph(
 		for (let row = 0; row < 4; row++) {
 			const li = (oldest + colL) % GRAPH_DOTS;
 			if (li < len) {
-				const v = buf[li];
+				// li < len guarantees the index is inside the populated region.
+				const v = buf[li]!;
 				sum += v;
 				counted++;
 				const norm = v / localMax;
 				const threshold = (3 - row) / 3;
-				if (norm >= threshold) code |= DOT_BITS[row][0];
+				if (norm >= threshold) code |= DOT_BITS[row]![0];
 			}
 			const ri = (oldest + colR) % GRAPH_DOTS;
 			if (ri < len) {
-				const v = buf[ri];
+				// ri < len guarantees the index is inside the populated region.
+				const v = buf[ri]!;
 				sum += v;
 				counted++;
 				const norm = v / localMax;
 				const threshold = (3 - row) / 3;
-				if (norm >= threshold) code |= DOT_BITS[row][1];
+				if (norm >= threshold) code |= DOT_BITS[row]![1];
 			}
 		}
 
