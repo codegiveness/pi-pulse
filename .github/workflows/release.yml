@@ -38,6 +38,14 @@ jobs:
       - name: Create Release Pull Request or Publish
         id: changesets
         uses: changesets/action@a45c4d594aa4e2e509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          # `changeset publish` (via `npm run release`) is idempotent: it skips
+          # versions already on the registry, so non-version-bump triggers
+          # (e.g. Dependabot editing package.json) exit cleanly instead of
+          # failing with "You cannot publish over the previously published version".
+          # changesets/action creates GitHub Releases by default
+          # (createGithubReleases: true), so no separate release step is needed.
+          publish: npm run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # setup-node needs a token placeholder to write .npmrc; OIDC from

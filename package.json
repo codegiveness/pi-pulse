@@ -56,7 +56,7 @@
     "test": "node --test test/*.test.mjs",
     "pretest": "npm run build",
     "prepublishOnly": "npm run typecheck && npm run test",
-    "release": "npm publish"
+    "release": "node node_modules/@changesets/cli/bin.js publish"
   },
   "engines": {
     "node": ">=20"
