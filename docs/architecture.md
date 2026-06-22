@@ -383,7 +383,7 @@ constant fraction of that.
 ### 7.1 Live footer (while streaming)
 
 ```text
-TPS ⣤⣸⠀⠀ 42 tps | TTFT 0.25s | Elapsed 0.6s
+⠼ ⣤⣸⠀⠀⠀⠀⠀⠀ 42 tps | TTFT 0.25s | Elapsed 0.6s
 ```
 
 - The leftmost character is a rotating braille spinner.

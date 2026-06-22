@@ -264,12 +264,15 @@ test("isMeterSnapshot rejects corrupt snapshots", () => {
 	assert.strictEqual(isMeterSnapshot({ savedAt: "x" }), false);
 	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: {}, allTtft: {}, win: {}, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
 	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: { values: [1], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: ["x"], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
+	// Mismatched values/times lengths would push NaN timestamps on restore.
+	assert.strictEqual(isMeterSnapshot({ savedAt: 1, allTps: { values: [1, 2], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }), false);
 });
 
 test("restore ignores corrupt snapshots without throwing", () => {
 	const meter = createMeter();
 	assert.doesNotThrow(() => meter.restore(null));
 	assert.doesNotThrow(() => meter.restore({ savedAt: "bad" }));
+	assert.doesNotThrow(() => meter.restore({ savedAt: 1, allTps: { values: [1, 2], times: [1] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 }));
 	assert.strictEqual(meter.inspect().tpsSamples, 0);
 });
 

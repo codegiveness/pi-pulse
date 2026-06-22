@@ -15,7 +15,7 @@ Because the metrics are non-overlapping, you can reason about *which* part of a 
 ### While streaming (live)
 
 ```text
-TPS ⠼ 42 tps | TTFT 0.25s | Elapsed 0.6s
+⠼ ⣤⣸⠀⠀⠀⠀⠀⠀ 42 tps | TTFT 0.25s | Elapsed 0.6s
 ```
 
 | Field | Meaning |

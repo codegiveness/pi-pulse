@@ -113,6 +113,7 @@ export function isMeterSnapshot(data: unknown): data is MeterSnapshot {
 		if (!b || typeof b !== "object") return false;
 		const o = b as Record<string, unknown>;
 		if (!Array.isArray(o.values) || !Array.isArray(o.times)) return false;
+		if (o.values.length !== o.times.length) return false;
 		if (!o.values.every((v) => typeof v === "number")) return false;
 		if (!o.times.every((v) => typeof v === "number")) return false;
 	}
