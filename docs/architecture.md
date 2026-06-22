@@ -15,7 +15,7 @@ detail than the README provides.
 
 `pi-pulse` replaces Pi's stock `"tps"` footer key with a live meter that
 tracks the performance of the active LLM provider during a coding session.
-It observes only five Pi events (`session_start`, `session_shutdown`,
+It observes only six Pi events (`session_start`, `session_shutdown`,
 `before_provider_request`, `message_start`, `message_update`, `message_end`)
 and derives three orthogonal metrics:
 
