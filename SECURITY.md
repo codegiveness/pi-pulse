@@ -6,7 +6,12 @@ Only the latest published version of `pi-pulse` receives security updates.
 
 ## Reporting a vulnerability
 
-Please report security issues privately by opening a GitHub issue with the title prefixed by `[SECURITY]`, or by emailing the repository owner directly. Do not disclose vulnerabilities publicly until a fix is released.
+Please do **not** open a public GitHub issue for security vulnerabilities. Instead, report them privately:
+
+- Open a [private GitHub security advisory](https://github.com/codegiveness/pi-pulse/security/advisories/new) (enable Private Vulnerability Reporting in repository settings if it is not already), **or**
+- Email `codegiveness@gmail.com`.
+
+We aim to acknowledge reports within 72 hours and release a fix before public disclosure.
 
 ## Extension security
 
