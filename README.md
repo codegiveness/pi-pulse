@@ -129,7 +129,7 @@ Pi streams assistant output through `message_update` events. pi-pulse recognizes
 | `thinking_delta` | yes | yes | Hidden reasoning tokens |
 | `toolcall_delta` | yes | yes | Streamed tool parameters — covers `write`, `edit`, `bash`, and any other tool call that streams its arguments |
 
-Other events such as `text_start`, `toolcall_start`, `toolcall_end`, and `done` are lifecycle markers with no token payload, so they are ignored by the meter.
+Other events such as `text_start`, `toolcall_end`, and `done` are lifecycle markers with no token payload, so they are ignored by the meter. A non-streamed `toolcall_start` (not followed by deltas) carries no token stream but still marks the first assistant output, so it stops the TTFT timer without contributing to TPS.
 
 **TTFT** is measured from `before_provider_request` to the first assistant output token (`text_delta`, `thinking_delta`, `toolcall_delta`) or non-streamed `toolcall_start` of the same assistant message.
 

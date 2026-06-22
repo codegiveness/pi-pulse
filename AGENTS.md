@@ -115,6 +115,7 @@ committing.
 | `test/graph.test.mjs` | Braille sparkline rendering, wraparound, and color thresholds. |
 | `test/meter.test.mjs` | Full TPS/TTFT/Elapsed lifecycle, multi-message sequences, clock injection, and buffer caps. |
 | `test/extension.test.mjs` | Pi event wiring, start/stop of the live ticker, status clear on shutdown, and abort cleanup. |
+| `test/stats.test.mjs` | Integration behavior through the extension wiring. |
 | `test/ttft-leak.test.mjs` | Tool-only / no-first-token turns must not record phantom TTFT or TPS samples. |
 
 Use the fake clock (`createMeter({ now: () => clock }`) to make timing tests
