@@ -40,7 +40,7 @@ jobs:
 
       - name: Create Release Pull Request or Publish
         id: changesets
-        uses: changesets/action@v1.9.0 # tag pin; GitHub Actions failed to resolve the v1.9.0 commit SHA despite API confirmation
+        uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
         with:
           # `changeset publish` (via `npm run release`) is idempotent: it skips
           # versions already on the registry, so non-version-bump triggers
@@ -54,3 +54,30 @@ jobs:
           # setup-node needs a token placeholder to write .npmrc; OIDC from
           # id-token: write is what actually authenticates npm trusted publishing.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # OpenSSF Scorecard: Signed-Releases. Changesets creates GitHub Releases
+      # with no attached artifacts, which Scorecard treats as "no releases".
+      # Attach a cosign keyless signature (+ Sigstore bundle) of the published
+      # tarball so releasesAreSigned detects a signed artifact.
+      - name: Install cosign
+        if: steps.changesets.outputs.published == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign published tarball and attach to GitHub release
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+          VER="$(node -p "require('./package.json').version")"
+          TARBALL="pi-pulse-${VER}.tgz"
+          # Fetch the exact artifact that was just published to npm.
+          npm pack "pi-pulse@${VER}"
+          # Keyless signature via Sigstore (OIDC); requires id-token: write.
+          cosign sign-blob --yes \
+            --bundle "${TARBALL}.sigstore.json" \
+            --output-signature "${TARBALL}.sig" \
+            "${TARBALL}"
+          gh release upload "v${VER}" \
+            "${TARBALL}" "${TARBALL}.sig" "${TARBALL}.sigstore.json" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
