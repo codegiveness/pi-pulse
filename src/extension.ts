@@ -77,6 +77,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 	function findLatestSnapshot(ctx: ExtensionContext): MeterSnapshot | undefined {
 		if (!ctx.sessionManager?.getBranch) return undefined;
 		const branch = ctx.sessionManager.getBranch();
+		if (!Array.isArray(branch)) return undefined;
 		for (let i = branch.length - 1; i >= 0; i--) {
 			const entry = branch[i];
 			if (
@@ -91,8 +92,11 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		return undefined;
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		reset(ctx);
+		// New/forked sessions start fresh (architecture.md §5.2); only the same
+		// underlying session file restores a snapshot.
+		if (event.reason === "new" || event.reason === "fork") return;
 		const snapshot = findLatestSnapshot(ctx);
 		if (snapshot) {
 			meter.restore(snapshot);
@@ -108,7 +112,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 	pi.on("message_start", async (event, ctx) => {
 		if (!isAssistantMessage(event.message)) return;
 		meter.startAssistantMessage();
-		startTick(ctx);
+		if (ctx.hasUI) startTick(ctx);
 	});
 
 	pi.on("message_update", async (event) => {

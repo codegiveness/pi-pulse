@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.4
+
+### Patch Changes
+
+- `session_start` now explicitly skips snapshot restore for `reason: "new"` and
+  `"fork"`, matching the documented behavior that new/forked sessions start fresh
+  (architecture.md §5.2). Previously this relied implicitly on the session file
+  having an empty branch.
+- Fix a boundary asymmetry in the `TPS_MIN_ELAPSED_SEC` (0.3 s) threshold: the
+  live TPS display used `elapsed > 0.3` while the sample recorded on
+  `message_end` used `elapsed < 0.3`, so at exactly 0.3 s the live footer read
+  `0 tps` while a sample was still committed. The live display now uses `>=`, so
+  the live value and the recorded sample never disagree, matching the documented
+  behavior.
+- Fix the live-footer example in `docs/metrics.md` and `docs/architecture.md`: the
+  streaming footer starts with the spinner and sparkline (e.g.
+  `⠼ ⣤⣸⠀⠀⠀⠀⠀⠀ 42 tps | …`), not a literal `TPS` prefix. Only the
+  idle/final footer is prefixed with `TPS`. Also harden `isMeterSnapshot` to
+  reject snapshots whose per-buffer `values` and `times` arrays have mismatched
+  lengths, so a damaged session entry can no longer push `NaN` timestamps into the
+  ring buffers on restore. The type guard is also refactored to avoid `as` casts,
+  per the project guideline.
+
 ## 0.3.3
 
 ### Patch Changes
