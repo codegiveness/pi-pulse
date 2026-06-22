@@ -36,4 +36,13 @@ jobs:
         run: npm test
 
       - name: Pack dry-run
-        run: npm pack --dry-run
+        run: npm pack --dry-run 2>&1 | tee pack.log
+
+      - name: Verify tarball contents
+        run: |
+          for path in src/ test/ internal/ docs/ .github/; do
+            if grep -q "$path" pack.log; then
+              echo "Forbidden path found in tarball: $path"
+              exit 1
+            fi
+          done
