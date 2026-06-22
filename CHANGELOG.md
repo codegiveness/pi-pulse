@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.5
+
+### Patch Changes
+
+- Release-pipeline fixes (no package behavior change — the published tarball is
+  unchanged from 0.3.4). The 0.3.4 auto-release signed-tarball step failed twice;
+  this release validates the fixed pipeline end-to-end (push → publish → sign):
+
+  - Retry `npm pack` for npm registry propagation (the signing step ran 4 s after
+    publish, before 0.3.4 was queryable → `ETARGET`).
+  - Run the cosign signing steps on `workflow_dispatch`, so an already-published
+    version can be re-signed without re-publishing.
+  - Use the cosign bundle format: drop the deprecated `--output-signature` flag
+    (cosign v2 ignores it and writes the signature into the `.sigstore.json`
+    bundle), so the tarball + signature attach to the GitHub Release cleanly.
+
 ## 0.3.4
 
 ### Patch Changes
