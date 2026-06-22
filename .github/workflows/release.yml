@@ -60,17 +60,23 @@ jobs:
       # Attach a cosign keyless signature (+ Sigstore bundle) of the published
       # tarball so releasesAreSigned detects a signed artifact.
       - name: Install cosign
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published == 'true' || github.event_name == 'workflow_dispatch'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign published tarball and attach to GitHub release
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
           VER="$(node -p "require('./package.json').version")"
           TARBALL="pi-pulse-${VER}.tgz"
-          # Fetch the exact artifact that was just published to npm.
-          npm pack "pi-pulse@${VER}"
+          # Fetch the exact artifact published to npm. The registry can take a
+          # few seconds to propagate a just-published version, so retry briefly.
+          for i in $(seq 1 12); do
+            if npm pack "pi-pulse@${VER}"; then break; fi
+            echo "npm registry has not propagated ${VER} yet (attempt ${i}/12); retrying in 10s..."
+            sleep 10
+          done
+          test -f "${TARBALL}"
           # Keyless signature via Sigstore (OIDC); requires id-token: write.
           cosign sign-blob --yes \
             --bundle "${TARBALL}.sigstore.json" \
