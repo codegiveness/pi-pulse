@@ -80,7 +80,12 @@ export default function piPulseExtension(pi: ExtensionAPI): void {
 		const branch = ctx.sessionManager.getBranch();
 		for (let i = branch.length - 1; i >= 0; i--) {
 			const entry = branch[i];
-			if (entry.type === "custom" && entry.customType === SNAPSHOT_TYPE && isMeterSnapshot(entry.data)) {
+			if (
+				entry &&
+				entry.type === "custom" &&
+				entry.customType === SNAPSHOT_TYPE &&
+				isMeterSnapshot(entry.data)
+			) {
 				return entry.data;
 			}
 		}

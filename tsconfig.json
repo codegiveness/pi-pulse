@@ -13,8 +13,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist", "test"]
