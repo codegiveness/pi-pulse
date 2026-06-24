@@ -12,6 +12,7 @@ judging provider and model performance instead of relying on impressions.
 - **TTFT** — time from `before_provider_request` to the first assistant output
   token (`text_delta`, `thinking_delta`, `toolcall_delta`, or `toolcall_start`).
 - **Elapsed** — end-to-end request latency from `before_provider_request` to `message_end`, accumulated across all completed assistant responses. While streaming, the *rendered* value is the current E2E latency; while idle, the value is the running total and is persisted across reloads/resumes.
+- **Clock** — the current wall-clock time as ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`, second precision), appended after Elapsed on every footer render. Presentation only — it never feeds back into the meter. Updated by the session clock ticker while idle and by the live ticker while streaming.
 
 The source compiles to `dist/` and is loaded by Pi via `package.json#pi.extensions`.
 
@@ -21,8 +22,8 @@ The extension observes these Pi events and nothing else:
 
 | Event | Purpose |
 |-------|---------|
-| `session_start` | Reset the meter and (re)start in a clean state. |
-| `session_shutdown` | Persist the latest snapshot, then stop the live ticker and reset state. |
+| `session_start` | Reset the meter and (re)start in a clean state, render the idle footer, and start the session clock ticker. |
+| `session_shutdown` | Persist the latest snapshot, then stop both tickers and reset state. |
 | `before_provider_request` | Mark the start of an LLM request so TTFT can be measured from this point. |
 | `message_start` (assistant only) | Start the response timer and the live ticker. |
 | `message_update` (assistant only, delta/toolcall_start events) | Count tokens, mark the first token, drive TTFT. |
@@ -38,14 +39,22 @@ granularity for per-response metrics.
 - **No background work from the factory.** Timers, file watchers, sockets, or
   recurring polling must be created only in response to `session_start` or to a
   specific command/tool/event that needs them.
-- **Clean up timers.** `setInterval` must always be paired with `clearInterval`.
-  Stop the ticker on `message_end` and on `session_shutdown`.
+- **Two intervals, both cleared on shutdown.** The live ticker (`TICK_MS`, 250 ms)
+  renders while streaming; the clock ticker (`CLOCK_MS`, 1 s) re-renders the idle
+  footer so the trailing `Clock` timestamp stays current. The clock ticker is
+  started in `session_start` and cleared in `reset()` (which `session_start` and
+  `session_shutdown` both call), so no interval outlives the session.
+- **Clean up timers.** Every `setInterval` must be paired with `clearInterval`.
+  Stop the live ticker on `message_end`/abort and stop both tickers on
+  `session_shutdown`.
 - **Abort-aware cleanup.** When a `ctx.signal` is available during streaming, attach
-  an abort listener that stops the ticker if the turn is cancelled.
+  an abort listener that stops the *live* ticker if the turn is cancelled. The
+  session clock ticker is not abort-tied: it is session-scoped and bails
+  (`meter.isStreaming()` guard) during stream teardown.
 - **Guard UI calls.** Use `ctx.hasUI` before calling `ctx.ui.setStatus`, and wrap
   calls in `try`/`catch` so a footer rendering bug does not crash Pi.
 - **No global mutable state.** Each extension load gets its own `StatsMeter`
-  instance. Do not store state in module-level variables.
+  instance and its own tickers. Do not store state in module-level variables.
 
 ## Timing and numeric correctness
 
@@ -53,6 +62,9 @@ granularity for per-response metrics.
   The meter accepts an injectable `now()` function so tests can use a fake clock.
 - Compute all displayed values from a single snapshot of `now()` inside each
   render call so `TPS`, `TTFT`, and `Elapsed` are mutually consistent.
+- The `Clock` timestamp is the real wall-clock time (`new Date()`), formatted
+  and appended in the **extension layer** — never inside the meter. This keeps
+  wall-clock out of the deterministic, monotonic-clock meter and its tests.
 - Token counts are estimates (≈ 4 characters per token). This is documented
   behavior; do not change it silently.
 - TTFT must measure from the most recent `before_provider_request` to the first
@@ -104,6 +116,26 @@ the next `session_start`.
 - Prefer explicit `return` types only where they catch real bugs; otherwise rely
   on inference to keep the code concise.
 
+## Dependency management
+
+- **Latest stable only.** Keep every dependency on the latest *stable* release
+  (the npm `latest` dist-tag). Do not adopt pre-release tags (`rc`, `beta`,
+  `dev`, nightly) as permanent dependencies — they may be installed temporarily
+  for evaluation or benchmarking but must not land in `package.json` without an
+  explicit decision.
+- **Vulnerability-free.** `npm audit` must report **0 vulnerabilities** before
+  every commit and release. Resolve advisories by upgrading to the latest safe
+  version; if a fix requires a breaking major bump, evaluate compatibility
+  against the test suite first.
+- **Security overrides are floors, not version chases.** Entries in
+  `package.json#overrides` (e.g. `js-yaml: ^4.1.2`) pin a minimum *safe* line
+  for transitive deps. Do not bump an override to a new major solely because a
+  newer one exists — confirm the dependents (e.g. `@changesets/parse` for
+  js-yaml) support it.
+- **Treat pre-1.0 minor bumps as breaking.** `@earendil-works/pi-coding-agent`
+  is pre-1.0, so `0.79 → 0.80` may break. After any such bump, re-run the full
+  release checklist (`typecheck` + `build` + `test`) before committing.
+
 ## Testing policy
 
 Every behavior change must be accompanied by tests. Run `npm test` before
@@ -139,4 +171,5 @@ deterministic. Assert on internal `snapshot()` values and rendered output.
 - [ ] `npm run typecheck` passes.
 - [ ] `npm run build` passes.
 - [ ] `npm test` passes.
+- [ ] `npm audit` reports 0 vulnerabilities.
 - [ ] README updated if user-visible behavior changed.

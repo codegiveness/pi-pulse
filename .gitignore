@@ -30,3 +30,7 @@ data/
 
 # Internal workspace
 internal/
+sprints/
+
+# Pi session export artifacts
+pi-session-*.html

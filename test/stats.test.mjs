@@ -74,19 +74,21 @@ test("single assistant message produces a formatted footer end-to-end", async ()
 });
 
 test("non-assistant messages produce no footer", async () => {
-	const ctx = createMockCtx();
-	const pi = createMockPi();
+	await withFakeTimers(async () => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
 
-	await pi.emit("session_start", ctx);
-	ctx.statuses.length = 0;
-	await pi.emit("message_start", ctx, { message: { role: "user" } });
-	await pi.emit("message_update", ctx, {
-		message: { role: "user" },
-		assistantMessageEvent: { type: "text_delta", delta: "x" },
+		await pi.emit("session_start", ctx);
+		ctx.statuses.length = 0;
+		await pi.emit("message_start", ctx, { message: { role: "user" } });
+		await pi.emit("message_update", ctx, {
+			message: { role: "user" },
+			assistantMessageEvent: { type: "text_delta", delta: "x" },
+		});
+		await pi.emit("message_end", ctx, { message: { role: "user" } });
+
+		assert.strictEqual(ctx.statuses.length, 0);
 	});
-	await pi.emit("message_end", ctx, { message: { role: "user" } });
-
-	assert.strictEqual(ctx.statuses.length, 0);
 });
 
 test("snapshot persists across shutdown and restores on reload", async () => {

@@ -10,6 +10,7 @@ Live footer meter for the [pi coding agent](https://pi.dev) that shows:
 - **TPS** — tokens per second during assistant streaming (text, reasoning, and streamed tool-call parameters), with a braille sparkline, rolling average, mean, p10 (floor), and p95
 - **TTFT μ** — mean time from `before_provider_request` to the first assistant output token (text, thinking, or tool-call parameter delta)
 - **Elapsed** — total wall-clock time the assistant spent generating responses during the session (accumulated across all completed assistant messages). While streaming, the live footer shows the current response duration; the idle footer shows the running total.
+- **Clock** — the current wall-clock time as an ISO 8601 UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`), ticking every second. Appended after Elapsed so each footer snapshot can be correlated with logs.
 
 The extension replaces the stock `pi-tps-meter` footer key (`"tps"`).
 
@@ -30,7 +31,7 @@ This extension and its documentation were originally inspired by [`pi-tps-meter`
 ## Example footer
 
 ```text
-TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | Elapsed 15s
+TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | Elapsed 15s | 2026-06-24T02:22:47Z
 ```
 
 ## Install
@@ -140,6 +141,8 @@ Other events such as `text_start`, `toolcall_end`, and `done` are lifecycle mark
 **Trailing window.** The TPS mean (μ), p10, p95, and TTFT mean are computed over a **trailing 10-minute window**. Older samples are retained in memory (up to a count cap of 512) but excluded from these statistics. This ensures the numbers reflect the provider's *current* behavior, not an average that includes stale data from hours ago. The `avg` field uses a shorter 60-second rolling window for a more reactive view. **Elapsed** is a cumulative counter and is not windowed — it shows the total time spent waiting across the entire session.
 
 **Elapsed** is the end-to-end (E2E) request latency accumulated across all completed assistant responses. Each response measures from `before_provider_request` to `message_end`, capturing the full user-perceived wait time including request serialization, network latency, and provider prefill. If `before_provider_request` did not fire for a response, the fallback anchor is `message_start`. While a response is streaming, the live footer shows the current E2E latency; once idle, the footer freezes and displays the accumulated total, which is persisted across reloads/resumes.
+
+**Clock** is the current wall-clock time rendered as `YYYY-MM-DDTHH:MM:SSZ` (ISO 8601 UTC, second precision) and appended after Elapsed. A session-scoped ticker re-renders the idle footer every second so the timestamp stays current even when nothing is streaming; while streaming, the faster live ticker already refreshes it. The clock is presentation only — it lives in the extension layer, not the metric meter — so it never affects TPS/TTFT/Elapsed measurements.
 
 ## Persistence across reloads
 

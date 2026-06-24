@@ -16,7 +16,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SNAPSHOT_TYPE, TICK_MS } from "./constants.js";
+import { CLOCK_MS, SNAPSHOT_TYPE, TICK_MS } from "./constants.js";
+import { fmtClock, type Theme } from "./format.js";
 import { createMeter, isMeterSnapshot, type MeterSnapshot, type StatsMeter } from "./meter.js";
 
 /** Called once per Pi session when this extension is loaded. */
@@ -24,6 +25,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 	const meter = deps?.meter ?? createMeter();
 
 	let tickTimer: ReturnType<typeof setInterval> | null = null;
+	let clockTimer: ReturnType<typeof setInterval> | null = null;
 	let abortCleanup: (() => void) | null = null;
 
 	function startTick(ctx: ExtensionContext): void {
@@ -31,7 +33,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 
 		tickTimer = setInterval(() => {
 			if (!meter.isStreaming()) return;
-			safeSetStatus(ctx, "tps", meter.renderLive(ctx.ui.theme));
+			safeSetStatus(ctx, "tps", appendClock(meter.renderLive(ctx.ui.theme), ctx.ui.theme));
 		}, TICK_MS);
 
 		// If the current turn is aborted, stop ticking immediately so we don't
@@ -55,6 +57,27 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		}
 	}
 
+	// Session-scoped ticker that keeps the idle footer (and its trailing
+	// wall-clock timestamp) fresh every second. It bails while streaming, where
+	// the faster live ticker (TICK_MS) already re-renders. Started on
+	// session_start and cleared in reset()/session_shutdown so no interval
+	// outlives the session — and so the captured ctx is dropped before it can
+	// go stale after a reload/session replacement.
+	function startClock(ctx: ExtensionContext): void {
+		if (clockTimer || !ctx.hasUI) return;
+		clockTimer = setInterval(() => {
+			if (meter.isStreaming()) return;
+			renderIdle(ctx);
+		}, CLOCK_MS);
+	}
+
+	function stopClock(): void {
+		if (clockTimer) {
+			clearInterval(clockTimer);
+			clockTimer = null;
+		}
+	}
+
 	function safeSetStatus(ctx: ExtensionContext, key: string, text: string | undefined): void {
 		if (!ctx.hasUI) return;
 		try {
@@ -64,8 +87,21 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		}
 	}
 
+	/** Append the ticking wall-clock timestamp to a footer segment. */
+	function appendClock(text: string, theme: Theme): string {
+		const clock = theme.fg("dim", fmtClock());
+		return text ? `${text} | ${clock}` : clock;
+	}
+
+	/** Render the idle footer (final metrics + clock) when there is metric data. */
+	function renderIdle(ctx: ExtensionContext): void {
+		const text = meter.renderFinal(ctx.ui.theme);
+		if (text) safeSetStatus(ctx, "tps", appendClock(text, ctx.ui.theme));
+	}
+
 	function reset(ctx: ExtensionContext): void {
 		stopTick();
+		stopClock();
 		meter.reset();
 		safeSetStatus(ctx, "tps", undefined);
 	}
@@ -96,13 +132,14 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		reset(ctx);
 		// New/forked sessions start fresh (architecture.md §5.2); only the same
 		// underlying session file restores a snapshot.
-		if (event.reason === "new" || event.reason === "fork") return;
-		const snapshot = findLatestSnapshot(ctx);
-		if (snapshot) {
-			meter.restore(snapshot);
-			const text = meter.renderFinal(ctx.ui.theme);
-			if (text) safeSetStatus(ctx, "tps", text);
+		if (event.reason === "new" || event.reason === "fork") {
+			startClock(ctx);
+			return;
 		}
+		const snapshot = findLatestSnapshot(ctx);
+		if (snapshot) meter.restore(snapshot);
+		renderIdle(ctx);
+		startClock(ctx);
 	});
 
 	pi.on("before_provider_request", async () => {
@@ -140,8 +177,7 @@ export default function piPulseExtension(pi: ExtensionAPI, deps?: { meter?: Stat
 		if (!isAssistantMessage(event.message)) return;
 		stopTick();
 		meter.endAssistantMessage();
-		const text = meter.renderFinal(ctx.ui.theme);
-		if (text) safeSetStatus(ctx, "tps", text);
+		renderIdle(ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

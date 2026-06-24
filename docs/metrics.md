@@ -15,7 +15,7 @@ Because the metrics are non-overlapping, you can reason about *which* part of a 
 ### While streaming (live)
 
 ```text
-⠼ ⣤⣸⠀⠀⠀⠀⠀⠀ 42 tps | TTFT 0.25s | Elapsed 0.6s
+⠼ ⣤⣸⠀⠀⠀⠀⠀⠀ 42 tps | TTFT 0.25s | Elapsed 0.6s | 2026-06-24T02:22:47Z
 ```
 
 | Field | Meaning |
@@ -23,11 +23,12 @@ Because the metrics are non-overlapping, you can reason about *which* part of a 
 | `TPS` | Live decode-phase throughput for the response in flight. |
 | `TTFT` | Either a ticking wait indicator before the first token, or the measured time-to-first-token once it arrives. |
 | `Elapsed` | Current end-to-end latency for this request so far. |
+| `Clock` | Current wall-clock time (ISO 8601 UTC, second precision). |
 
 ### While idle (final)
 
 ```text
-TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | Elapsed 15s
+TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | Elapsed 15s | 2026-06-24T02:22:47Z
 ```
 
 | Field | Meaning |
@@ -38,6 +39,7 @@ TPS ⣤⣸⠀⠀⠀⠀⠀⠀ 42 avg | μ 38 | p10 25 | p95 55 | TTFT μ 0.25s | 
 | `p95` | 95th percentile of TPS over the last **10 minutes** — the "ceiling". |
 | `TTFT μ` | Mean time to first token over the last **10 minutes**. |
 | `Elapsed` | Accumulated end-to-end request latency for the whole session. |
+| `Clock` | Current wall-clock time (ISO 8601 UTC, second precision), re-rendered every second while idle. |
 
 ---
 
@@ -116,6 +118,18 @@ While a response is streaming, the footer shows the live current E2E latency. On
 Elapsed is **not** windowed: it grows monotonically for the lifetime of the session and is persisted across Pi reloads/resumes.
 
 **Use it for:** scoring total session cost in wall-clock time, or comparing the full latency of one provider/model to another on real tasks.
+
+---
+
+### Clock — wall-clock timestamp
+
+```text
+Clock = new Date().toISOString().slice(0, 19) + "Z"   // e.g. 2026-06-24T02:22:47Z
+```
+
+The trailing `Clock` segment is the current wall-clock time formatted as ISO 8601 UTC with second precision. It is appended after `Elapsed` on every footer render so each visible snapshot is timestamped and can be matched against external logs.
+
+It is presentation only — it does not feed back into any metric — and is updated by a session-scoped ticker that re-renders the idle footer once per second. While a response is streaming, the faster live ticker already refreshes it. The ticker is started on `session_start` and cleared on `session_shutdown` (and on reset), so no interval outlives the session.
 
 ---
 
