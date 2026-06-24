@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- e30a36d: Add a ticking wall-clock timestamp (`Clock`) to the footer, appended after `Elapsed` as an ISO 8601 UTC value with second precision, e.g. `... | Elapsed 15s | 2026-06-24T02:22:47Z`. A session-scoped ticker re-renders the idle footer every second so the timestamp stays current even while nothing is streaming; while streaming, the existing live ticker already refreshes it. The clock is presentation only and never feeds back into TPS/TTFT/Elapsed measurements. Both tickers are started on `session_start` and cleared on `session_shutdown` (and on reset) so no interval outlives the session.
+
+### Patch Changes
+
+- e30a36d: Internal maintenance: bump devDependency `@earendil-works/pi-coding-agent`
+  from 0.79.9 to 0.80.2 (the published package's peer range is unchanged at
+  `*`, so consumers are unaffected). Add a Dependency management section to
+  AGENTS.md codifying the policy of pinning to the latest stable,
+  vulnerability-free releases.
+
 ## 0.3.5
 
 ### Patch Changes
