@@ -38,6 +38,14 @@ export function fmtElapsed(ms: number): string {
 }
 
 /**
+ * Format a wall-clock timestamp as ISO 8601 UTC with second precision,
+ * e.g. `2026-06-24T02:22:47Z`. Defaults to the current time.
+ */
+export function fmtClock(date: Date = new Date()): string {
+	return date.toISOString().slice(0, 19) + "Z";
+}
+
+/**
  * Color-code TPS: fast = success, medium = warning, slow = error.
  */
 export function tpsColor(tps: number, text: string, theme: Theme): string {

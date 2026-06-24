@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import test from "node:test";
-import { fmtTps, fmtTtft, fmtElapsed, tpsColor, ttftColor } from "../dist/format.js";
+import { fmtClock, fmtTps, fmtTtft, fmtElapsed, tpsColor, ttftColor } from "../dist/format.js";
 
 const theme = {
 	fg: (name, text) => `[${name}:${text}]`,
@@ -56,6 +56,12 @@ test("tpsColor color-codes by threshold", () => {
 	assert.strictEqual(tpsColor(20, "boundary", theme), "[warning:boundary]");
 	assert.strictEqual(tpsColor(19.9, "slow", theme), "[error:slow]");
 	assert.strictEqual(tpsColor(0, "zero", theme), "[error:zero]");
+});
+
+test("fmtClock formats ISO 8601 UTC with second precision", () => {
+	assert.strictEqual(fmtClock(new Date("2026-06-24T02:22:47.123Z")), "2026-06-24T02:22:47Z");
+	assert.strictEqual(fmtClock(new Date("2026-06-24T02:22:47Z")), "2026-06-24T02:22:47Z");
+	assert.strictEqual(fmtClock(new Date("2026-06-24T02:22:47.999Z")), "2026-06-24T02:22:47Z");
 });
 
 test("ttftColor color-codes by threshold", () => {

@@ -89,11 +89,13 @@ test("registers every handler pi-pulse needs", () => {
 });
 
 test("session_start resets status", async () => {
-	const ctx = createMockCtx();
-	const pi = createMockPi();
-	await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
-	const cleared = ctx.statuses.find((s) => s.key === "tps" && s.text === undefined);
-	assert.ok(cleared, `expected status cleared, got ${JSON.stringify(ctx.statuses)}`);
+	await withFakeTimers(async () => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+		const cleared = ctx.statuses.find((s) => s.key === "tps" && s.text === undefined);
+		assert.ok(cleared, `expected status cleared, got ${JSON.stringify(ctx.statuses)}`);
+	});
 });
 
 test("non-assistant messages are ignored", async () => {
@@ -240,45 +242,49 @@ test("throwing setStatus does not crash the extension", async () => {
 });
 
 test("session_start restores the latest snapshot from a branch with multiple entries", async () => {
-	const entries = [
-		{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 0, allTps: { values: [], times: [] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 } },
-		{ type: "custom", customType: "other-plugin/snapshot", data: {} },
-		{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 1000, allTps: { values: [10], times: [1000] }, allTtft: { values: [0.2], times: [1000] }, win: { values: [10], times: [1000] }, graph: [10], lastElapsedMs: 100, totalElapsedMs: 100 } },
-	];
-	const ctx = createMockCtx();
-	ctx.sessionManager.getBranch = () => entries;
-	const pi = createMockPiWithEntries([]);
-	await pi.emit("session_start", ctx, { type: "session_start", reason: "reload" });
-	const restored = ctx.statuses.find((s) => s.key === "tps" && s.text !== undefined);
-	assert.ok(restored, "expected restored footer with latest snapshot");
-	// The latest snapshot has totalElapsedMs: 100 -> "Elapsed" is rendered.
-	// The stale snapshot has totalElapsedMs: 0 -> renderFinal returns "" -> no status pushed.
-	// A non-empty restored footer therefore proves the LATEST snapshot was picked.
-	assert.ok(restored.text.includes("Elapsed"), `expected Elapsed from latest snapshot: ${restored.text}`);
+	await withFakeTimers(async () => {
+		const entries = [
+			{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 0, allTps: { values: [], times: [] }, allTtft: { values: [], times: [] }, win: { values: [], times: [] }, graph: [], lastElapsedMs: 0, totalElapsedMs: 0 } },
+			{ type: "custom", customType: "other-plugin/snapshot", data: {} },
+			{ type: "custom", customType: "pi-pulse/snapshot", data: { savedAt: 1000, allTps: { values: [10], times: [1000] }, allTtft: { values: [0.2], times: [1000] }, win: { values: [10], times: [1000] }, graph: [10], lastElapsedMs: 100, totalElapsedMs: 100 } },
+		];
+		const ctx = createMockCtx();
+		ctx.sessionManager.getBranch = () => entries;
+		const pi = createMockPiWithEntries([]);
+		await pi.emit("session_start", ctx, { type: "session_start", reason: "reload" });
+		const restored = ctx.statuses.find((s) => s.key === "tps" && s.text !== undefined);
+		assert.ok(restored, "expected restored footer with latest snapshot");
+		// The latest snapshot has totalElapsedMs: 100 -> "Elapsed" is rendered.
+		// The stale snapshot has totalElapsedMs: 0 -> renderFinal returns "" -> no status pushed.
+		// A non-empty restored footer therefore proves the LATEST snapshot was picked.
+		assert.ok(restored.text.includes("Elapsed"), `expected Elapsed from latest snapshot: ${restored.text}`);
+	});
 });
 
 test("session_start with reason 'new' or 'fork' skips snapshot restore", async () => {
-	// A snapshot is present in the branch, but new/forked sessions must start
-	// fresh (architecture.md §5.2) rather than restoring inherited metrics.
-	const snapshot = {
-		savedAt: 0,
-		allTps: { values: [10], times: [0] },
-		allTtft: { values: [0.2], times: [0] },
-		win: { values: [10], times: [0] },
-		graph: [10],
-		lastElapsedMs: 100,
-		totalElapsedMs: 100,
-	};
-	for (const reason of ["new", "fork"]) {
-		const ctx = createMockCtx();
-		ctx.sessionManager.getBranch = () => [
-			{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot },
-		];
-		const pi = createMockPiWithEntries([]);
-		await pi.emit("session_start", ctx, { type: "session_start", reason });
-		const restored = ctx.statuses.find((s) => s.key === "tps" && s.text !== undefined);
-		assert.strictEqual(restored, undefined, `expected no restore for reason '${reason}', got ${JSON.stringify(ctx.statuses)}`);
-	}
+	await withFakeTimers(async () => {
+		// A snapshot is present in the branch, but new/forked sessions must start
+		// fresh (architecture.md §5.2) rather than restoring inherited metrics.
+		const snapshot = {
+			savedAt: 0,
+			allTps: { values: [10], times: [0] },
+			allTtft: { values: [0.2], times: [0] },
+			win: { values: [10], times: [0] },
+			graph: [10],
+			lastElapsedMs: 100,
+			totalElapsedMs: 100,
+		};
+		for (const reason of ["new", "fork"]) {
+			const ctx = createMockCtx();
+			ctx.sessionManager.getBranch = () => [
+				{ type: "custom", customType: "pi-pulse/snapshot", data: snapshot },
+			];
+			const pi = createMockPiWithEntries([]);
+			await pi.emit("session_start", ctx, { type: "session_start", reason });
+			const restored = ctx.statuses.find((s) => s.key === "tps" && s.text !== undefined);
+			assert.strictEqual(restored, undefined, `expected no restore for reason '${reason}', got ${JSON.stringify(ctx.statuses)}`);
+		}
+	});
 });
 
 test("ticker renders deterministic values with an injected fake-clock meter", async () => {
@@ -310,5 +316,85 @@ test("ticker renders deterministic values with an injected fake-clock meter", as
 		assert.ok(live, "expected a live status render from the ticker");
 		assert.ok(live.text.includes("0.30s"), `expected TTFT 0.30s in live footer: ${live.text}`);
 		assert.ok(live.text.includes("Elapsed "), `expected Elapsed segment in live footer: ${live.text}`);
+	});
+});
+
+test("wall-clock timestamp is appended after Elapsed in the final footer", async () => {
+	await withFakeTimers(async () => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx);
+		await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		await pi.emit("message_update", ctx, {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		});
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+
+		const final = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined).pop();
+		assert.ok(final, "expected a final status");
+		assert.ok(final.text.includes("Elapsed"), `expected Elapsed segment: ${final.text}`);
+		assert.ok(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/.test(final.text), `expected trailing clock timestamp: ${final.text}`);
+		// The clock must appear after Elapsed.
+		assert.ok(final.text.indexOf("Elapsed") < final.text.search(/\d{4}-\d{2}-\d{2}T/), `clock should follow Elapsed: ${final.text}`);
+	});
+});
+
+test("clock re-renders every second while idle", async () => {
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx);
+		await pi.emit("before_provider_request", ctx, { type: "before_provider_request", payload: {} });
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		await pi.emit("message_update", ctx, {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+		});
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+
+		// The live ticker stopped on message_end; only the session clock ticker
+		// is active, so each tick drives exactly one idle re-render.
+		ctx.statuses.length = 0;
+		timers.tick(3);
+
+		const renders = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined);
+		assert.strictEqual(renders.length, 3, "expected one idle render per clock tick");
+		assert.ok(
+			renders.every((r) => /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/.test(r.text)),
+			`every idle render should carry the clock: ${JSON.stringify(renders)}`,
+		);
+	});
+});
+
+test("clock ticker bails while streaming (live ticker owns rendering)", async () => {
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx);
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+
+		ctx.statuses.length = 0;
+		// Both the clock and live tickers are active. The clock ticker must bail
+		// (meter is streaming) so only the live ticker renders — one render per tick.
+		timers.tick(2);
+		const renders = ctx.statuses.filter((s) => s.key === "tps" && s.text !== undefined);
+		assert.strictEqual(renders.length, 2, "clock ticker must not render while streaming");
+
+		await pi.emit("message_end", ctx, { message: { role: "assistant" } });
+	});
+});
+
+test("all timers are cleared on session_shutdown (no leak)", async () => {
+	await withFakeTimers(async (timers) => {
+		const ctx = createMockCtx();
+		const pi = createMockPi();
+		await pi.emit("session_start", ctx, { type: "session_start", reason: "startup" });
+		await pi.emit("message_start", ctx, { message: { role: "assistant" } });
+		assert.ok(timers.active, "expected the clock and live tickers to be active during a session");
+
+		await pi.emit("session_shutdown", ctx, { type: "session_shutdown", reason: "quit" });
+		assert.strictEqual(timers.active, false, "all timers must be cleared on session_shutdown");
 	});
 });

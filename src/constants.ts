@@ -14,6 +14,7 @@ export const ALL_TIME_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 // Live-render timing.
 export const TICK_MS = 250; // interval while streaming
+export const CLOCK_MS = 1000; // interval for the ticking wall-clock timestamp
 
 // Braille graph config.
 export const GRAPH_W = 10;
