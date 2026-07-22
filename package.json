@@ -1,6 +1,6 @@
 {
   "name": "pi-pulse",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "Live TPS, TTFT, and response-time footer for the pi coding agent.",
   "license": "MIT",
@@ -65,7 +65,9 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "overrides": {
-    "js-yaml": "^4.1.2"
+    "brace-expansion": "^5.0.7",
+    "js-yaml": "^4.3.0",
+    "protobufjs": "^7.6.5"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
