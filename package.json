@@ -70,8 +70,8 @@
     "protobufjs": "^7.6.5"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
-    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@changesets/cli": "^3.0.0",
+    "@earendil-works/pi-coding-agent": "^0.84.1",
     "typescript": "^7.0.2"
   }
 }
